@@ -1,9 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
-<<<<<<< HEAD
 allowBuilds:
+  '@prisma/engines': true
   esbuild: true
+  prisma: true
   sharp: true
-=======
->>>>>>> b2133f6 (Initial frontend setup)

@@ -1,8 +1,8 @@
-<<<<<<< HEAD
 # Secrets & private keys — NEVER commit
 .env
 .env.local
 .env.*.local
+apps/api/.env
 *.pem
 *.key
 deployer.key
@@ -24,7 +24,6 @@ dist/
 # OS files
 .DS_Store
 Thumbs.db
-=======
 node_modules/
 .next/
 dist/
@@ -37,4 +36,3 @@ pnpm-lock.yaml
 *.db
 *.db-shm
 *.db-wal
->>>>>>> b2133f6 (Initial frontend setup)
