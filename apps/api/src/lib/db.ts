@@ -1,3 +1,5 @@
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { config } from "../config.js";
 
@@ -5,7 +7,13 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+function createPrismaClient(): PrismaClient {
+  const pool = new Pool({ connectionString: config.databaseUrl });
+  const adapter = new PrismaPg(pool);
+  return new PrismaClient({ adapter });
+}
+
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (config.nodeEnv !== "production") {
   globalForPrisma.prisma = prisma;
