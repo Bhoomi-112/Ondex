@@ -94,7 +94,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         networkPassphrase: opts?.networkPassphrase || Networks.TESTNET,
         address,
       });
-      return result;
+      return { signedTxXdr: result.signedTxXdr, signerAddress: result.signerAddress ?? address };
     },
     [address]
   );

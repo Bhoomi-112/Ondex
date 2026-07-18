@@ -148,3 +148,53 @@ model IndexerCursor {
 
   @@map("indexer_cursor")
 }
+
+model Application {
+  id            Int      @id @default(autoincrement())
+  onChainId     Int      @unique @map("on_chain_id")
+  startup       String
+  name          String
+  pitch         String
+  askAmount     BigInt   @map("ask_amount")
+  status        String   @default("Submitted") // Submitted | UnderReview | Approved | Rejected
+  maskName      Boolean  @default(true) @map("mask_name")
+  maskAddress   Boolean  @default(true) @map("mask_address")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  milestones    ApplicationMilestone[]
+  votes         ApplicationVote[]
+
+  @@index([startup])
+  @@index([status])
+  @@map("applications")
+}
+
+model ApplicationMilestone {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @map("application_id")
+  idx           Int
+  description   String
+  amount        BigInt
+  released      Boolean     @default(false)
+
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@unique([applicationId, idx])
+  @@map("application_milestones")
+}
+
+model ApplicationVote {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @map("application_id")
+  voter         String
+  approve       Boolean
+  commentHash   String      @default("") @map("comment_hash")
+  timestamp     DateTime    @default(now())
+
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@unique([applicationId, voter])
+  @@index([voter])
+  @@map("application_votes")
+}

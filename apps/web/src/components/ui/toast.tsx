@@ -97,4 +97,4 @@ export function useToast() {
   return context;
 }
 
-export { Toast };
+export type { Toast };

@@ -13,7 +13,7 @@
     "bindings:generate": "node scripts/generate-bindings.mjs"
   },
   "devDependencies": {
-    "@stellar/stellar-sdk": "^13.0.0",
+    "@stellar/stellar-sdk": "^16.0.1",
     "turbo": "^2.1.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"

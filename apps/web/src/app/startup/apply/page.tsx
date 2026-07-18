@@ -12,7 +12,7 @@ import { TransactionStatus } from "@/components/ui/transaction-status";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { getPlatformClient } from "@/lib/contracts";
-import { submitTransaction, getExplorerUrl } from "@/lib/tx";
+import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
 import { Networks } from "@stellar/stellar-sdk";
 
 interface MilestoneInput {
@@ -76,33 +76,26 @@ export default function ApplyPage() {
     setTxError(undefined);
 
     try {
-      const platform = getPlatformClient();
-
       const milestoneAmounts = milestones.map((ms) =>
         BigInt(Math.round(parseFloat(ms.amount) * 10_000_000))
       );
 
-      const tx = await platform.submit_application({
-        startup: address,
-        name: companyName,
-        pitch: pitch,
-        ask_amount: BigInt(Math.round(askAmountNum * 10_000_000)),
-        milestones: milestones.map((ms, i) => ({
-          description: ms.description,
-          amount: milestoneAmounts[i],
-        })),
-        mask_name: maskName,
-        mask_address: maskAddress,
-      });
-
       setTxStatus("submitting");
-
-      const { signedTxXdr } = await signTransaction(tx.toXDR(), {
-        networkPassphrase: Networks.TESTNET,
-      });
-
-      setTxStatus("confirming");
-      const result = await submitTransaction(signedTxXdr);
+      const result = await buildSignSubmit(
+        () => getPlatformClient(address).submit_application({
+          startup: address,
+          name: companyName,
+          pitch: pitch,
+          ask_amount: BigInt(Math.round(askAmountNum * 10_000_000)),
+          milestones: milestones.map((ms, i) => ({
+            description: ms.description,
+            amount: milestoneAmounts[i],
+          })),
+          mask_name: maskName,
+          mask_address: maskAddress,
+        }),
+        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+      );
 
       setTxHash(result.hash);
       setTxStatus("success");
@@ -118,10 +111,17 @@ export default function ApplyPage() {
       setTimeout(() => router.push("/startup"), 2000);
     } catch (err: any) {
       setTxStatus("error");
-      setTxError(err.message || "Transaction failed");
+      const msg = err?.message || String(err);
+      const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
+      setTxError(isAccountMissing
+        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+        : msg || "Transaction failed"
+      );
       addToast({
         title: "Transaction Failed",
-        description: err.message || "Failed to submit application",
+        description: isAccountMissing
+          ? "Account not found on testnet. Fund your wallet first."
+          : msg || "Failed to submit application",
         variant: "error",
       });
     }

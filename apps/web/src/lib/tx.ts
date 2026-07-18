@@ -1,7 +1,8 @@
-import { TransactionBuilder, Networks, Horizon, rpc } from "@stellar/stellar-sdk";
+import { TransactionBuilder, Networks, Horizon, rpc, Account } from "@stellar/stellar-sdk";
 
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
 const RPC_URL = "https://soroban-testnet.stellar.org";
+const FRIENDBOT_URL = "https://friendbot.stellar.org";
 
 export const horizonServer = new Horizon.Server(HORIZON_URL);
 export const rpcServer = new rpc.Server(RPC_URL);
@@ -14,11 +15,10 @@ interface TxResult {
 
 export async function submitTransaction(
   signedXdr: string,
-  opts?: { timeout?: number }
 ): Promise<TxResult> {
   const transaction = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
 
-  const response = await rpcServer.sendTransaction(transaction, opts?.timeout || 30);
+  const response = await rpcServer.sendTransaction(transaction);
 
   if (response.status === "PENDING") {
     return await pollTxResult(response.hash);
@@ -26,13 +26,13 @@ export async function submitTransaction(
 
   if (response.status === "ERROR") {
     throw new Error(
-      `Transaction failed: ${response.error || JSON.stringify(response)}`
+      `Transaction failed: ${JSON.stringify(response)}`
     );
   }
 
   return {
     hash: response.hash,
-    ledger: response.ledger || 0,
+    ledger: 0,
     successful: true,
   };
 }
@@ -61,10 +61,64 @@ async function pollTxResult(hash: string, maxAttempts = 30): Promise<TxResult> {
   throw new Error("Transaction timed out waiting for confirmation");
 }
 
+export async function fundTestnetAccount(address: string): Promise<string> {
+  const response = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(address)}`);
+
+  if (!response.ok) {
+    const text = await response.text();
+    if (text.includes("already funded")) {
+      return "already-funded";
+    }
+    throw new Error(`Friendbot funding failed: ${text}`);
+  }
+
+  const data = await response.json();
+  const hash = data?.result?.successful
+    ? data.result.hash
+    : data?.hash || "unknown";
+  return hash;
+}
+
+export async function checkAccountExists(address: string): Promise<boolean> {
+  try {
+    const account = await rpcServer.getAccount(address);
+    return !!account;
+  } catch {
+    return false;
+  }
+}
+
 export function getExplorerUrl(hash: string): string {
   return `https://stellar.expert/explorer/testnet/tx/${hash}`;
 }
 
 export function getContractExplorerUrl(contractId: string): string {
   return `https://stellar.expert/explorer/testnet/contract/${contractId}`;
+}
+
+function isBadSeqError(err: unknown): boolean {
+  const msg = String(err);
+  return msg.includes("txBadSeq") || msg.includes("txbad_seq") || msg.includes("-5");
+}
+
+export async function buildSignSubmit(
+  buildFn: () => Promise<{ toXDR(): string }>,
+  signFn: (xdr: string) => Promise<{ signedTxXdr: string }>,
+  maxRetries = 2,
+): Promise<TxResult> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    try {
+      const assembled = await buildFn();
+      const { signedTxXdr } = await signFn(assembled.toXDR());
+      return await submitTransaction(signedTxXdr);
+    } catch (err: unknown) {
+      lastError = err;
+      if (!isBadSeqError(err)) throw err;
+    }
+  }
+  throw lastError;
 }

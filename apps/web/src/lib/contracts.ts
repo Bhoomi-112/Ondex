@@ -11,23 +11,25 @@ export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 let _platformClient: PlatformClient | null = null;
 let _escrowClient: EscrowClient | null = null;
 
-export function getPlatformClient(contractId?: string): PlatformClient {
-  if (!_platformClient || contractId) {
+export function getPlatformClient(publicKey?: string, contractId?: string): PlatformClient {
+  if (!_platformClient || contractId || publicKey) {
     _platformClient = new PlatformClient({
       contractId: contractId || PLATFORM_CONTRACT_ID,
       rpcUrl: RPC_URL,
       networkPassphrase: NETWORK_PASSPHRASE,
+      ...(publicKey ? { publicKey } : {}),
     });
   }
   return _platformClient;
 }
 
-export function getEscrowClient(contractId?: string): EscrowClient {
-  if (!_escrowClient || contractId) {
+export function getEscrowClient(publicKey?: string, contractId?: string): EscrowClient {
+  if (!_escrowClient || contractId || publicKey) {
     _escrowClient = new EscrowClient({
       contractId: contractId || ESCROW_CONTRACT_ID,
       rpcUrl: RPC_URL,
       networkPassphrase: NETWORK_PASSPHRASE,
+      ...(publicKey ? { publicKey } : {}),
     });
   }
   return _escrowClient;

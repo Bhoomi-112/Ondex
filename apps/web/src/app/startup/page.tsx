@@ -9,9 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TransactionStatus } from "@/components/ui/transaction-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowUpRight, CheckCircle2, XCircle, Clock, FileText } from "lucide-react";
-import { formatXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
-import { PLATFORM_CONTRACT_ID, ESCROW_CONTRACT_ID } from "@/lib/contracts";
+import { ArrowUpRight, CheckCircle2, XCircle, Clock, FileText, Lock } from "lucide-react";
+import { formatXLM, stroopsToXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
+import { getPlatformClient, getEscrowClient } from "@/lib/contracts";
+import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
+import { Networks } from "@stellar/stellar-sdk";
 import Link from "next/link";
 
 interface Application {
@@ -20,7 +22,7 @@ interface Application {
   pitch: string;
   askAmount: number;
   status: "Submitted" | "UnderReview" | "Approved" | "Rejected";
-  milestones: { description: string; amount: number }[];
+  milestones: { description: string; amount: number; released: boolean }[];
 }
 
 interface Vote {
@@ -30,46 +32,95 @@ interface Vote {
   timestamp: number;
 }
 
-interface Milestone {
-  amount: number;
-  released: boolean;
-}
-
 export default function StartupDashboard() {
   const { address, signTransaction } = useWallet();
   const { addToast } = useToast();
   const [applications, setApplications] = useState<Application[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
   const [txStatus, setTxStatus] = useState<"idle" | "signing" | "submitting" | "confirming" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
+  const [txError, setTxError] = useState<string | undefined>();
 
   const fetchApplications = useCallback(async () => {
     if (!address) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/applications?startup=${address}`);
-      const data = await res.json();
-      setApplications(data.applications || []);
+      const client = getPlatformClient(address);
+      const appsResult = await client.list_applications({ offset: BigInt(0), limit: BigInt(100) });
+      const rawApps = appsResult.result;
 
-      if (data.applications?.[0]) {
-        const votesRes = await fetch(`/api/applications/${data.applications[0].id}/votes`);
-        const votesData = await votesRes.json();
-        setVotes(votesData.votes || []);
+      const statusMap: Record<string, Application["status"]> = {
+        Submitted: "Submitted",
+        UnderReview: "UnderReview",
+        Approved: "Approved",
+        Rejected: "Rejected",
+      };
 
-        if (data.applications[0].status === "Approved") {
-          const campRes = await fetch(`/api/campaigns?app_id=${data.applications[0].id}`);
-          const campData = await campRes.json();
-          if (campData.campaigns?.[0]) {
-            const detailRes = await fetch(`/api/campaigns/${campData.campaigns[0].id}`);
-            const detail = await detailRes.json();
-            setMilestones(detail.milestones || []);
+      const myApps: Application[] = rawApps
+        .filter((app: any) => app.startup === address)
+        .map((app: any) => {
+          const statusTag = app.status?.tag || "Submitted";
+          const milestones = app.milestones?.map((m: any, i: number) => ({
+            description: m.description || `Milestone ${i + 1}`,
+            amount: stroopsToXLM(m.amount),
+            released: false,
+          })) || [];
+
+          return {
+            id: Number(app.id),
+            name: app.name || "Anonymous",
+            pitch: app.pitch || "",
+            askAmount: stroopsToXLM(app.ask_amount),
+            status: statusMap[statusTag] || "Submitted",
+            milestones,
+          };
+        });
+
+      if (myApps.length > 0 && myApps[0].status === "Approved") {
+        try {
+          const escrowClient = getEscrowClient(address);
+          const milestoneCountResult = await escrowClient.get_milestone_count();
+          const totalMilestones = Number(milestoneCountResult.result);
+
+          const releasedCountResult = await escrowClient.get_released_count();
+          const releasedCount = Number(releasedCountResult.result);
+
+          const milestoneDetails = await Promise.allSettled(
+            Array.from({ length: totalMilestones }, (_, i) =>
+              escrowClient.get_milestone({ index: i })
+            )
+          );
+
+          for (let i = 0; i < totalMilestones && i < myApps[0].milestones.length; i++) {
+            const detail = milestoneDetails[i];
+            if (detail.status === "fulfilled") {
+              myApps[0].milestones[i].released = detail.status === "fulfilled" && (detail.value.result as any)?.released === true;
+            }
           }
+        } catch {
+          // Escrow may not be initialized
+        }
+      }
+
+      setApplications(myApps);
+
+      if (myApps[0]) {
+        try {
+          const votesResult = await client.get_votes({ app_id: BigInt(myApps[0].id) });
+          const votes = (votesResult.result || []).map((v: any) => ({
+            voter: v.voter,
+            approve: v.approve,
+            commentHash: v.comment_hash || "",
+            timestamp: Number(v.timestamp),
+          }));
+          setVotes(votes);
+        } catch {
+          setVotes([]);
         }
       }
     } catch (err) {
-      console.error("Failed to fetch applications:", err);
+      console.error("Failed to fetch applications from chain:", err);
     } finally {
       setLoading(false);
     }
@@ -78,6 +129,49 @@ export default function StartupDashboard() {
   useEffect(() => {
     fetchApplications();
   }, [fetchApplications]);
+
+  const handleReleaseMilestone = async (index: number) => {
+    if (!address) return;
+
+    setTxStatus("signing");
+    setTxError(undefined);
+
+    try {
+      setTxStatus("submitting");
+      const result = await buildSignSubmit(
+        () => getEscrowClient(address).release_milestone({ index }),
+        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+      );
+
+      setTxHash(result.hash);
+      setTxStatus("success");
+
+      addToast({
+        title: "Milestone Released",
+        description: `Milestone ${index + 1} funds have been released from escrow.`,
+        variant: "success",
+        txHash: result.hash,
+        txUrl: getExplorerUrl(result.hash),
+      });
+
+      fetchApplications();
+    } catch (err: any) {
+      setTxStatus("error");
+      const msg = err?.message || String(err);
+      const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
+      setTxError(isAccountMissing
+        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+        : msg || "Failed to release milestone"
+      );
+      addToast({
+        title: "Release Failed",
+        description: isAccountMissing
+          ? "Account not found on testnet. Fund your wallet first."
+          : msg || "Transaction was rejected",
+        variant: "error",
+      });
+    }
+  };
 
   const statusBadge = (status: string) => {
     switch (status) {
@@ -123,7 +217,7 @@ export default function StartupDashboard() {
       {txStatus !== "idle" && (
         <Card className="mb-6">
           <CardContent>
-            <TransactionStatus status={txStatus} txHash={txHash} />
+            <TransactionStatus status={txStatus} txHash={txHash} error={txError} />
           </CardContent>
         </Card>
       )}
@@ -241,39 +335,49 @@ export default function StartupDashboard() {
               <Card>
                 <CardHeader>
                   <CardTitle>Milestone Progress</CardTitle>
+                  <CardDescription>
+                    Funds are released as milestones are completed. Each release triggers escrow transfer.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {milestones.length === 0 ? (
-                    <p className="text-text-secondary">Campaign not yet created.</p>
-                  ) : (
-                    milestones.map((ms, i) => (
-                      <div key={i} className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-text-primary">
-                            Milestone {i + 1}
+                  {applications[0].milestones.map((ms, i) => (
+                    <div key={i} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-text-primary">
+                          Milestone {i + 1}: {ms.description}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono text-text-secondary">
+                            {formatXLM(ms.amount)} XLM
                           </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-mono text-text-secondary">
-                              {formatXLM(ms.amount)} XLM
-                            </span>
-                            {ms.released ? (
-                              <Badge variant="success">Released</Badge>
-                            ) : (
-                              <Badge variant="secondary">Pending</Badge>
-                            )}
-                          </div>
-                        </div>
-                        <div className="h-2 rounded-full bg-card-hover overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all ${
-                              ms.released ? "bg-success" : "bg-accent/30"
-                            }`}
-                            style={{ width: ms.released ? "100%" : "0%" }}
-                          />
+                          {ms.released ? (
+                            <Badge variant="success">Released</Badge>
+                          ) : (
+                            <Badge variant="secondary">Pending</Badge>
+                          )}
                         </div>
                       </div>
-                    ))
-                  )}
+                      <div className="h-2 rounded-full bg-card-hover overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            ms.released ? "bg-success" : "bg-accent/30"
+                          }`}
+                          style={{ width: ms.released ? "100%" : "0%" }}
+                        />
+                      </div>
+                      {!ms.released && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleReleaseMilestone(i)}
+                          disabled={txStatus !== "idle"}
+                        >
+                          <Lock className="mr-1.5 h-3 w-3" />
+                          Release Milestone {i + 1}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
             </TabsContent>

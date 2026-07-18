@@ -5,11 +5,15 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function stroopsToXLM(stroops: bigint | number): number {
+  return Number(stroops) / 10_000_000;
+}
+
 export function formatXLM(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 7,
-  }).format(amount / 10_000_000);
+  }).format(amount);
 }
 
 export function formatAddress(address: string): string {

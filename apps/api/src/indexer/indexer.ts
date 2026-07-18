@@ -5,6 +5,7 @@ import * as campaignService from "../services/campaign.service.js";
 import * as caseService from "../services/case.service.js";
 import * as jurorService from "../services/juror.service.js";
 import * as identityService from "../services/identity.service.js";
+import * as applicationService from "../services/application.service.js";
 import * as indexerCursorRepo from "../repositories/indexer-cursor.repository.js";
 import {
   parseCampaignEvent,
@@ -20,7 +21,7 @@ const POLL_INTERVAL_MS = parseInt(
 
 interface ContractSpec {
   contractId: string;
-  type: "campaign" | "case" | "juror" | "identity";
+  type: "platform" | "campaign" | "case" | "juror" | "identity";
 }
 
 function scValToHex(val: xdr.ScVal): string {
@@ -178,6 +179,12 @@ export class EventIndexer {
         const dataValue = event.value;
 
         switch (contractSpec.type) {
+          case "platform":
+            await applicationService.processPlatformEvent({
+              eventName,
+              ...parseCampaignEvent(eventName, dataValue, topicStrings),
+            });
+            break;
           case "campaign":
             await campaignService.processCampaignEvent({
               eventName,

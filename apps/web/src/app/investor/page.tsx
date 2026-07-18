@@ -19,26 +19,29 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Coins, TrendingUp, ExternalLink, Wallet } from "lucide-react";
-import { formatXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
-import { getEscrowClient } from "@/lib/contracts";
-import { submitTransaction, getExplorerUrl } from "@/lib/tx";
+import { formatXLM, stroopsToXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
+import { getEscrowClient, getPlatformClient } from "@/lib/contracts";
+import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
 import { Networks } from "@stellar/stellar-sdk";
 
 interface Campaign {
   id: number;
   appId: number;
+  name: string;
+  pitch: string;
   goal: number;
   totalDeposited: number;
   status: string;
   milestones: { amount: number; released: boolean }[];
   myDeposit: number;
+  releasedCount: number;
+  totalMilestones: number;
 }
 
 export default function InvestorDashboard() {
   const { address, signTransaction } = useWallet();
   const { addToast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [myInvestments, setMyInvestments] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [depositAmount, setDepositAmount] = useState("");
@@ -50,20 +53,81 @@ export default function InvestorDashboard() {
   const fetchCampaigns = useCallback(async () => {
     setLoading(true);
     try {
-      const [allRes, mineRes] = await Promise.all([
-        fetch("/api/campaigns"),
-        address
-          ? fetch(`/api/campaigns?investor=${address}`)
-          : Promise.resolve(new Response(JSON.stringify({ campaigns: [] }))),
-      ]);
+      const platformClient = getPlatformClient(address || undefined);
+      const appsResult = await platformClient.list_applications({ offset: BigInt(0), limit: BigInt(100) });
+      const rawApps = appsResult.result;
 
-      const allData = await allRes.json();
-      const mineData = await mineRes.json();
+      const approved = rawApps.filter((app: any) => app.status?.tag === "Approved");
 
-      setCampaigns(allData.campaigns || []);
-      setMyInvestments(mineData.campaigns || []);
+      const escrowClient = getEscrowClient(address || undefined);
+
+      const campaigns: Campaign[] = await Promise.all(
+        approved.map(async (app: any) => {
+          const askAmountNum = stroopsToXLM(app.ask_amount);
+          const appMilestones = app.milestones?.map((m: any) => ({
+            amount: stroopsToXLM(m.amount),
+            released: false,
+          })) || [];
+
+          let totalDeposited = 0;
+          let myDeposit = 0;
+          let releasedCount = 0;
+          let totalMilestones = appMilestones.length;
+          let campaignStatus = "Active";
+
+          try {
+            const [totalResult, milestoneCountResult, releasedCountResult, statusResult] = await Promise.allSettled([
+              escrowClient.get_total_deposited(),
+              escrowClient.get_milestone_count(),
+              escrowClient.get_released_count(),
+              escrowClient.get_campaign_status(),
+            ]);
+
+            if (totalResult.status === "fulfilled") {
+              totalDeposited = stroopsToXLM(totalResult.value.result);
+            }
+            if (milestoneCountResult.status === "fulfilled") {
+              totalMilestones = Number(milestoneCountResult.value.result);
+            }
+            if (releasedCountResult.status === "fulfilled") {
+              releasedCount = Number(releasedCountResult.value.result);
+            }
+            if (statusResult.status === "fulfilled") {
+              const tag = (statusResult.value.result as any)?.tag;
+              if (tag) campaignStatus = tag;
+            }
+
+            if (address) {
+              try {
+                const depositResult = await escrowClient.get_deposit({ investor: address });
+                myDeposit = stroopsToXLM(depositResult.result);
+              } catch {
+                myDeposit = 0;
+              }
+            }
+          } catch {
+            // Escrow contract may not be initialized yet
+          }
+
+          return {
+            id: Number(app.id),
+            appId: Number(app.id),
+            name: app.name || "Campaign #" + Number(app.id),
+            pitch: app.pitch || "",
+            goal: askAmountNum,
+            totalDeposited,
+            status: campaignStatus,
+            milestones: appMilestones,
+            myDeposit,
+            releasedCount,
+            totalMilestones,
+          };
+        })
+      );
+
+      setCampaigns(campaigns);
     } catch (err) {
-      console.error("Failed to fetch campaigns:", err);
+      console.error("Failed to fetch campaigns from chain:", err);
     } finally {
       setLoading(false);
     }
@@ -86,21 +150,14 @@ export default function InvestorDashboard() {
     setTxError(undefined);
 
     try {
-      const escrow = getEscrowClient();
-
-      const tx = await escrow.deposit({
-        investor: address,
-        amount: BigInt(Math.round(amount * 10_000_000)),
-      });
-
       setTxStatus("submitting");
-
-      const { signedTxXdr } = await signTransaction(tx.toXDR(), {
-        networkPassphrase: Networks.TESTNET,
-      });
-
-      setTxStatus("confirming");
-      const result = await submitTransaction(signedTxXdr);
+      const result = await buildSignSubmit(
+        () => getEscrowClient(address).deposit({
+          investor: address,
+          amount: BigInt(Math.round(amount * 10_000_000)),
+        }),
+        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+      );
 
       setTxHash(result.hash);
       setTxStatus("success");
@@ -118,15 +175,23 @@ export default function InvestorDashboard() {
       fetchCampaigns();
     } catch (err: any) {
       setTxStatus("error");
-      setTxError(err.message || "Deposit failed");
+      const msg = err?.message || String(err);
+      const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
+      setTxError(isAccountMissing
+        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+        : msg || "Deposit failed"
+      );
       addToast({
         title: "Deposit Failed",
-        description: err.message || "Transaction was rejected",
+        description: isAccountMissing
+          ? "Account not found on testnet. Fund your wallet first."
+          : msg || "Transaction was rejected",
         variant: "error",
       });
     }
   };
 
+  const myInvestments = campaigns.filter(c => c.myDeposit > 0);
   const totalInvested = myInvestments.reduce((sum, c) => sum + c.myDeposit, 0);
 
   if (!address) {
@@ -210,7 +275,7 @@ export default function InvestorDashboard() {
 
       <Tabs defaultValue="browse" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="browse">Browse Campaigns</TabsTrigger>
+          <TabsTrigger value="browse">Browse Campaigns ({campaigns.length})</TabsTrigger>
           <TabsTrigger value="portfolio">My Investments ({myInvestments.length})</TabsTrigger>
         </TabsList>
 
@@ -236,23 +301,25 @@ export default function InvestorDashboard() {
             <div className="grid gap-4 sm:grid-cols-2">
               {campaigns.map((campaign) => {
                 const progress = campaign.goal > 0 ? (campaign.totalDeposited / campaign.goal) * 100 : 0;
-                const milestonesReleased = campaign.milestones?.filter((m) => m.released).length || 0;
-                const milestonesTotal = campaign.milestones?.length || 0;
 
                 return (
                   <Card key={campaign.id} className="hover:border-accent/30 transition-colors">
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle>Campaign #{campaign.id}</CardTitle>
-                          <CardDescription>Application #{campaign.appId}</CardDescription>
+                          <CardTitle>{campaign.name}</CardTitle>
+                          <CardDescription>Campaign #{campaign.id}</CardDescription>
                         </div>
-                        <Badge variant={campaign.status === "Active" ? "active" : "success"}>
+                        <Badge variant={campaign.status === "Active" ? "default" : "success"}>
                           {campaign.status}
                         </Badge>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      {campaign.pitch && (
+                        <p className="text-sm text-text-secondary line-clamp-2">{campaign.pitch}</p>
+                      )}
+
                       <div>
                         <div className="flex justify-between text-sm mb-1">
                           <span className="text-text-secondary">Progress</span>
@@ -272,9 +339,15 @@ export default function InvestorDashboard() {
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-text-secondary">Milestones</span>
                         <span className="text-text-primary">
-                          {milestonesReleased}/{milestonesTotal} released
+                          {campaign.releasedCount}/{campaign.totalMilestones} released
                         </span>
                       </div>
+
+                      {campaign.myDeposit > 0 && (
+                        <div className="rounded-md bg-success/5 border border-success/20 p-2 text-sm">
+                          <span className="text-success font-medium">Your deposit: {formatXLM(campaign.myDeposit)} XLM</span>
+                        </div>
+                      )}
 
                       <div className="flex gap-2">
                         <Button
@@ -320,13 +393,13 @@ export default function InvestorDashboard() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-text-primary">
-                          Campaign #{campaign.id}
+                          {campaign.name}
                         </p>
                         <p className="text-sm text-text-secondary">
                           Your deposit: {formatXLM(campaign.myDeposit)} XLM
                         </p>
                       </div>
-                      <Badge variant={campaign.status === "Active" ? "active" : "success"}>
+                      <Badge variant={campaign.status === "Active" ? "default" : "success"}>
                         {campaign.status}
                       </Badge>
                     </div>
@@ -341,7 +414,7 @@ export default function InvestorDashboard() {
       <Dialog open={depositDialogOpen} onOpenChange={setDepositDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Deposit to Campaign #{selectedCampaign?.id}</DialogTitle>
+            <DialogTitle>Deposit to {selectedCampaign?.name || "Campaign"}</DialogTitle>
             <DialogDescription>
               Funds are locked in a Soroban escrow contract until milestones are completed.
             </DialogDescription>
@@ -357,6 +430,12 @@ export default function InvestorDashboard() {
                   <span className="text-text-secondary">Raised</span>
                   <span className="text-text-primary">{formatXLM(selectedCampaign.totalDeposited)} XLM</span>
                 </div>
+                {selectedCampaign.myDeposit > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Your deposit</span>
+                    <span className="text-success font-medium">{formatXLM(selectedCampaign.myDeposit)} XLM</span>
+                  </div>
+                )}
               </div>
             )}
             <div className="space-y-2">

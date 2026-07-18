@@ -7,16 +7,18 @@ import app from "./app.js";
 
 const logger = createLogger("startup");
 
-type ContractType = "campaign" | "case" | "juror" | "identity";
+type ContractType = "platform" | "campaign" | "case" | "juror" | "identity";
 
 function buildContractSpecs(): Array<{ contractId: string; type: ContractType }> {
   const specs: Array<{ contractId: string; type: ContractType }> = [];
 
+  const platformId = process.env.PLATFORM_CONTRACT_ID;
   const campaignId = process.env.CAMPAIGN_CONTRACT_ID;
   const caseId = process.env.CASE_CONTRACT_ID;
   const jurorId = process.env.JUROR_CONTRACT_ID;
   const identityId = process.env.IDENTITY_CONTRACT_ID;
 
+  if (platformId) specs.push({ contractId: platformId, type: "platform" });
   if (campaignId) specs.push({ contractId: campaignId, type: "campaign" });
   if (caseId) specs.push({ contractId: caseId, type: "case" });
   if (jurorId) specs.push({ contractId: jurorId, type: "juror" });
