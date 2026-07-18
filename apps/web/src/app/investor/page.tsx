@@ -438,6 +438,12 @@ export default function InvestorDashboard() {
                 )}
               </div>
             )}
+            <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2">
+              <p className="text-xs text-warning">
+                Funds are locked in a Soroban escrow contract. Withdrawals are only possible through
+                dispute resolution — there is no direct withdrawal.
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="deposit-amount">Amount (XLM)</Label>
               <Input

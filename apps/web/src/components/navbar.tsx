@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useWallet } from "@/providers/wallet";
 import { cn, formatAddress } from "@/lib/utils";
 import { fundTestnetAccount } from "@/lib/tx";
+import { useToast } from "@/components/ui/toast";
 import { LogOut, Menu, X, Droplets, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -16,6 +17,7 @@ const navLinks = [
 
 export function Navbar() {
   const { address, walletName, connect, disconnect, isConnecting } = useWallet();
+  const { addToast } = useToast();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [funding, setFunding] = useState(false);
@@ -34,13 +36,26 @@ export function Navbar() {
     try {
       const result = await fundTestnetAccount(address);
       if (result === "already-funded") {
-        alert("Your account is already funded on testnet.");
+        addToast({
+          title: "Already funded",
+          description: "Your account is already funded on testnet.",
+          variant: "warning",
+        });
       } else {
+        addToast({
+          title: "Account funded",
+          description: "Your testnet account has been funded successfully.",
+          variant: "success",
+        });
         window.location.reload();
       }
     } catch (err: any) {
       console.error("Friendbot funding failed:", err);
-      alert(err?.message || "Funding failed. Try again in a few seconds.");
+      addToast({
+        title: "Funding failed",
+        description: err?.message || "Try again in a few seconds.",
+        variant: "error",
+      });
     } finally {
       setFunding(false);
     }

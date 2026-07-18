@@ -10,6 +10,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TransactionStatus } from "@/components/ui/transaction-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   CheckCircle2,
   XCircle,
   Clock,
@@ -56,6 +63,8 @@ export default function JuryDashboard() {
   const [txStatus, setTxStatus] = useState<"idle" | "signing" | "submitting" | "confirming" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
+  const [voteConfirmOpen, setVoteConfirmOpen] = useState(false);
+  const [pendingVote, setPendingVote] = useState<{ appId: number; approve: boolean } | null>(null);
 
   const safeJson = async (res: Response) => {
     if (!res.ok) return null;
@@ -522,7 +531,10 @@ export default function JuryDashboard() {
                         <>
                           <Button
                             variant="success"
-                            onClick={() => handleVote(app.id, true)}
+                            onClick={() => {
+                              setPendingVote({ appId: app.id, approve: true });
+                              setVoteConfirmOpen(true);
+                            }}
                             disabled={txStatus !== "idle"}
                           >
                             <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -530,7 +542,10 @@ export default function JuryDashboard() {
                           </Button>
                           <Button
                             variant="destructive"
-                            onClick={() => handleVote(app.id, false)}
+                            onClick={() => {
+                              setPendingVote({ appId: app.id, approve: false });
+                              setVoteConfirmOpen(true);
+                            }}
                             disabled={txStatus !== "idle"}
                           >
                             <XCircle className="mr-2 h-4 w-4" />
@@ -638,6 +653,62 @@ export default function JuryDashboard() {
           )}
         </TabsContent>
       </Tabs>
+
+      <Dialog open={voteConfirmOpen} onOpenChange={setVoteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingVote?.approve ? "Approve Application" : "Reject Application"}
+            </DialogTitle>
+            <DialogDescription>
+              This action is irreversible. Your vote will be recorded on-chain and
+              cannot be changed after submission.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            {pendingVote && (
+              <div className="rounded-md bg-background p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Application</span>
+                  <span className="text-text-primary">#{pendingVote.appId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Your vote</span>
+                  <span className={pendingVote.approve ? "text-success font-medium" : "text-danger font-medium"}>
+                    {pendingVote.approve ? "Approve" : "Reject"}
+                  </span>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  setVoteConfirmOpen(false);
+                  setPendingVote(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant={pendingVote?.approve ? "success" : "destructive"}
+                className="flex-1"
+                onClick={() => {
+                  if (pendingVote) {
+                    handleVote(pendingVote.appId, pendingVote.approve);
+                    setVoteConfirmOpen(false);
+                    setPendingVote(null);
+                  }
+                }}
+                disabled={txStatus !== "idle"}
+              >
+                {txStatus !== "idle" ? "Submitting..." : "Confirm vote"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
