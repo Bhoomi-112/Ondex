@@ -1,0 +1,17 @@
+{
+  "name": "ondex",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm run build:contracts && pnpm run build:ts",
+    "build:contracts": "cargo build --target wasm32v1-none --release --manifest-path ./contracts/Cargo.toml",
+    "build:ts": "pnpm -r build",
+    "deploy": "tsx scripts/deploy.ts",
+    "fund": "tsx scripts/fund-testnet-account.ts"
+  },
+  "devDependencies": {
+    "@stellar/stellar-sdk": "^13.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,25 @@
+# Secrets & private keys — NEVER commit
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+deployer.key
+
+# Dependencies
+node_modules/
+
+# Rust build artifacts
+target/
+
+# Next.js
+.next/
+out/
+
+# Build output
+dist/
+*.wasm
+
+# OS files
+.DS_Store
+Thumbs.db
