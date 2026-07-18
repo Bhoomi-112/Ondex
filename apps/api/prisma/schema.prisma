@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model ContractEvent {
+  id            String   @id @default(uuid())
+  contractId    String   @map("contract_id")
+  contractType  String   @map("contract_type") // escrow | jury | identity
+  eventName     String   @map("event_name")
+  ledgerSeq     Int      @map("ledger_seq")
+  ledgerCloseAt DateTime @map("ledger_close_at")
+  txHash        String   @map("tx_hash")
+  topicXdr      String   @map("topic_xdr")
+  dataXdr       String   @map("data_xdr")
+  processed     Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([txHash, eventName])
+  @@index([contractType, processed])
+  @@index([ledgerSeq])
+  @@map("contract_events")
+}
+
+model Campaign {
+  id              Int      @id @default(autoincrement())
+  campaignId      Int      @unique @map("campaign_id")
+  startupAddress  String   @map("startup_address")
+  investorAddress String   @map("investor_address")
+  amount          BigInt
+  asset           String
+  state           String   @default("Active") // Active | JuryApproved | DisputeOpen | Released | Refunded
+  createdAt       DateTime @default(now()) @map("created_at")
+  approvedAt      DateTime? @map("approved_at")
+  disputeDeadline DateTime? @map("dispute_deadline")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([state])
+  @@index([startupAddress])
+  @@index([investorAddress])
+  @@map("campaigns")
+}
+
+model JuryCase {
+  id            Int      @id @default(autoincrement())
+  caseId        Int      @unique @map("case_id")
+  status        String   @default("Voting") // Voting | Resolved | Disputed | Slashed
+  forVotes      Int      @default(0) @map("for_votes")
+  againstVotes  Int      @default(0) @map("against_votes")
+  totalVotes    Int      @default(0) @map("total_votes")
+  resolvedAt    DateTime? @map("resolved_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  jurors        CaseJuror[]
+  votes         CaseVote[]
+
+  @@index([status])
+  @@map("jury_cases")
+}
+
+model CaseJuror {
+  id        Int      @id @default(autoincrement())
+  caseId    Int      @map("case_id")
+  jurorAddr String   @map("juror_address")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  case      JuryCase @relation(fields: [caseId], references: [caseId])
+
+  @@unique([caseId, jurorAddr])
+  @@index([jurorAddr])
+  @@map("case_jurors")
+}
+
+model CaseVote {
+  id        Int      @id @default(autoincrement())
+  caseId    Int      @map("case_id")
+  jurorAddr String   @map("juror_address")
+  vote      String   // For | Against
+  timestamp DateTime @default(now())
+
+  case      JuryCase @relation(fields: [caseId], references: [caseId])
+
+  @@unique([caseId, jurorAddr])
+  @@map("case_votes")
+}
+
+model Juror {
+  id             Int      @id @default(autoincrement())
+  address        String   @unique
+  xlmStake       BigInt   @map("xlm_stake")
+  platformStake  BigInt   @map("platform_stake")
+  registeredAt   DateTime @default(now()) @map("registered_at")
+  isActive       Boolean  @default(true) @map("is_active")
+
+  @@map("jurors")
+}
+
+model Identity {
+  id             Int      @id @default(autoincrement())
+  identityId     String   @unique @map("identity_id")
+  commitmentHash String?  @map("commitment_hash")
+  isCommitted    Boolean  @default(false) @map("is_committed")
+  isRevealed     Boolean  @default(false) @map("is_revealed")
+  linkedCaseId   Int?     @map("linked_case_id")
+  backendRef     String?  @map("backend_ref")
+  revealedAt     DateTime? @map("revealed_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([isCommitted])
+  @@index([isRevealed])
+  @@map("identities")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  wallet    String
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([wallet])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  wallet    String
+  type      String   // jury_assigned | vote_received | escrow_released | round_closed | dispute_opened
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  data      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([wallet, read])
+  @@map("notifications")
+}
+
+model IndexerCursor {
+  id              String   @id @default("singleton")
+  lastLedgerSeq   Int      @default(0) @map("last_ledger_seq")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("indexer_cursor")
+}
