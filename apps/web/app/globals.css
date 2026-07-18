@@ -1,9 +1,40 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@import "tailwindcss";
+
+@theme {
+  --color-background: hsl(var(--background));
+  --color-card: hsl(var(--card));
+  --color-card-hover: hsl(var(--card-hover));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+  --color-destructive: hsl(var(--destructive));
+  --color-success: hsl(var(--success));
+}
+
+:root {
+  --background: 222 47% 4%;
+  --card: 217 33% 8%;
+  --card-hover: 217 33% 12%;
+  --primary: 160 84% 39%;
+  --primary-foreground: 0 0% 100%;
+  --muted-foreground: 215 20% 55%;
+  --border: 217 33% 15%;
+  --destructive: 0 84% 60%;
+  --success: 142 71% 45%;
 }
 
 body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--primary-foreground));
   font-family: system-ui, -apple-system, sans-serif;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
