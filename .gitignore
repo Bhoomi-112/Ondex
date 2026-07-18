@@ -1,0 +1,40 @@
+<<<<<<< HEAD
+# Secrets & private keys — NEVER commit
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+deployer.key
+
+# Dependencies
+node_modules/
+
+# Rust build artifacts
+target/
+
+# Next.js
+.next/
+out/
+
+# Build output
+dist/
+*.wasm
+
+# OS files
+.DS_Store
+Thumbs.db
+=======
+node_modules/
+.next/
+dist/
+target/
+*.wasm
+.env
+.env.local
+.turbo/
+pnpm-lock.yaml
+*.db
+*.db-shm
+*.db-wal
+>>>>>>> b2133f6 (Initial frontend setup)

@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+<<<<<<< HEAD
+allowBuilds:
+  esbuild: true
+  sharp: true
+=======
+>>>>>>> b2133f6 (Initial frontend setup)
