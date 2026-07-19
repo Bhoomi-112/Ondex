@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm --filter @ondex/web build",
+  "installCommand": "pnpm install",
+  "outputDirectory": "apps/web/.next",
+  "framework": "nextjs",
+  "ignoreCommand": "git diff --quiet HEAD~1 HEAD -- apps/web/ packages/ turbo.json vercel.json pnpm-lock.yaml pnpm-workspace.yaml",
+  "github": {
+    "silent": true
+  }
+}

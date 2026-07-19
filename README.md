@@ -209,6 +209,39 @@ pnpm test:e2e:ui        # interactive Playwright UI
 - **Jury economics (real staking + slashing):** Jurors stake real assets. Formal disputes can slash 50% of stake for votes contradicting documented majority outcomes.
 - **Chain is source of truth:** Off-chain systems (backend DB) index and cache for querying, but never store funds-relevant state as authoritative.
 
+## Vercel Deployment
+
+### 1. Connect Repository
+
+Go to [vercel.com/new](https://vercel.com/new), import your GitHub repo, and select `Ondex`.
+
+### 2. Configure Project
+
+| Setting | Value |
+|---------|-------|
+| **Root Directory** | `apps/web` |
+| **Framework** | Next.js (auto-detected) |
+| **Build Command** | `pnpm --filter @ondex/web build` |
+| **Install Command** | `pnpm install` |
+| **Output Directory** | `.next` (auto-detected) |
+
+### 3. Environment Variables
+
+Set these in the Vercel dashboard under **Settings → Environment Variables**:
+
+| Variable | Description |
+|----------|-------------|
+| `SOROBAN_RPC_URL` | `https://soroban-testnet.stellar.org` |
+| `SOROBAN_NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015` |
+| `HORIZON_URL` | `https://horizon-testnet.stellar.org` |
+| `NEXT_PUBLIC_JURY_REGISTRY_CONTRACT` | (optional) Jury registry contract ID for self-registration |
+
+These must also be declared in `turbo.json` under the `build` task's `env` array (already configured).
+
+### 4. Deploy
+
+Push to `main` (or the branch you connected). Vercel will auto-deploy. The `vercel.json` at the repo root configures the build pipeline — only changes to `apps/web/`, `packages/`, or config files trigger a new deployment.
+
 ## License
 
 Private — All rights reserved.
