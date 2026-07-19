@@ -221,9 +221,9 @@ Go to [vercel.com/new](https://vercel.com/new), import your GitHub repo, and sel
 |---------|-------|
 | **Root Directory** | `apps/web` |
 | **Framework** | Next.js (auto-detected) |
-| **Build Command** | `pnpm --filter @ondex/web build` |
-| **Install Command** | `pnpm install` |
-| **Output Directory** | `.next` (auto-detected) |
+| **Build Command** | `cd ../.. && pnpm --filter @ondex/web build` |
+| **Install Command** | `cd ../.. && pnpm install` |
+| **Output Directory** | `.next` |
 
 ### 3. Environment Variables
 
