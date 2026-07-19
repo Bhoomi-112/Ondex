@@ -29,9 +29,10 @@ import {
   UserPlus,
 } from "lucide-react";
 import { formatXLM, stroopsToXLM, formatAddress, timeAgo } from "@/lib/utils";
-import { getPlatformClient, getEscrowClient, ESCROW_CONTRACT_ID } from "@/lib/contracts";
+import { getPlatformClient, getEscrowClient, ESCROW_CONTRACT_ID, JURY_REGISTRY_CONTRACT_ID } from "@/lib/contracts";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
-import { Networks } from "@stellar/stellar-sdk";
+import { buildContractCall, rpcClient, TESTNET_NETWORK_PASSPHRASE } from "@/lib/stellar";
+import { Networks, xdr, TransactionBuilder, Address } from "@stellar/stellar-sdk";
 
 interface Application {
   id: number;
@@ -298,11 +299,28 @@ export default function JuryDashboard() {
 
     try {
       setTxStatus("submitting");
+
+      const jurorAddr = Address.fromString(address).toScAddress();
+      const xlmStake = xdr.ScVal.scvI128(new xdr.Int128Parts(0, 0));
+      const platformStake = xdr.ScVal.scvI128(new xdr.Int128Parts(0, 0));
+
+      const txBuilder = await buildContractCall(
+        JURY_REGISTRY_CONTRACT_ID,
+        "register",
+        [
+          xdr.ScVal.scvAddress(jurorAddr),
+          xlmStake,
+          platformStake,
+        ],
+        address,
+      );
+
+      const builtTx = txBuilder.build();
+      const txXdr = builtTx.toXDR();
+      const { signedTxXdr } = await signTransaction(txXdr, { networkPassphrase: Networks.TESTNET });
       const result = await buildSignSubmit(
-        () => getPlatformClient(address).register_juror({
-          juror: address,
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        () => Promise.resolve({ toXDR: () => signedTxXdr }),
+        (xdr) => Promise.resolve({ signedTxXdr: xdr }),
       );
 
       setTxHash(result.hash);
@@ -321,7 +339,7 @@ export default function JuryDashboard() {
       setTxStatus("error");
       const msg = err?.message || String(err);
       const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      const isAuth = msg.includes("Unauthorized") || msg.includes("admin") || msg.includes("not authorized");
+      const isAuth = msg.includes("Unauthorized") || msg.includes("admin") || msg.includes("not authorized") || msg.includes("require_auth") || msg.includes("sceAuth");
       setTxError(isAccountMissing
         ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
         : isAuth

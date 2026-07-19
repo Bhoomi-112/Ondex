@@ -8,6 +8,9 @@ export const ESCROW_CONTRACT_ID = "CC5YIIBETTIJ2DTYK5H5V4MIM574QH6KL3INPDTSFA5O4
 export const RPC_URL = "https://soroban-testnet.stellar.org";
 export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 
+export const JURY_REGISTRY_CONTRACT_ID =
+  process.env.NEXT_PUBLIC_JURY_REGISTRY_CONTRACT || PLATFORM_CONTRACT_ID;
+
 let _platformClient: PlatformClient | null = null;
 let _escrowClient: EscrowClient | null = null;
 
