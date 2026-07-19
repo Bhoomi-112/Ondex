@@ -27,7 +27,7 @@ async function ensureKit() {
 async function tryFreighterDirect(xdr: string, passphrase: string): Promise<string> {
   const freighter = await import("@stellar/freighter-api");
   const result = await freighter.signTransaction(xdr, { networkPassphrase: passphrase });
-  return result;
+  return result.signedTxXdr;
 }
 
 export async function connectWallet(): Promise<string> {

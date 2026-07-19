@@ -35,7 +35,7 @@ interface Campaign {
 }
 
 export default function InvestorDashboard() {
-  const { toast } = useToast()
+  const { addToast: toast } = useToast()
   const { signXdr } = useWalletContext()
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([])
   const [isLoading, setIsLoading] = React.useState(true)

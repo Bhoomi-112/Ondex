@@ -2,12 +2,14 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { useAuthContext } from "@/components/auth/auth-provider"
+import { AuthProvider, useAuthContext } from "@/components/auth/auth-provider"
 import { TopNav } from "@/components/layout/top-nav"
 import { SideNav } from "@/components/layout/side-nav"
 import { Skeleton } from "@/components/ui/skeleton"
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export const dynamic = "force-dynamic"
+
+function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { isAuthenticated, isLoading, role } = useAuthContext()
 
@@ -53,5 +55,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 ml-64 p-8">{children}</main>
       </div>
     </div>
+  )
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <AppLayoutInner>{children}</AppLayoutInner>
+    </AuthProvider>
   )
 }

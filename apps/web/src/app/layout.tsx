@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { WalletProvider } from "@/providers/wallet";
-import { ToastProvider } from "@/components/ui/toast";
+import { Providers } from "./providers";
 import { Navbar } from "@/components/navbar";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Ondex — Startup Funding on Stellar",
@@ -30,14 +31,12 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased">
-        <WalletProvider>
-          <ToastProvider>
-            <div className="flex min-h-screen flex-col">
-              <Navbar />
-              <main className="flex-1">{children}</main>
-            </div>
-          </ToastProvider>
-        </WalletProvider>
+        <Providers>
+          <div className="flex min-h-screen flex-col">
+            <Navbar />
+            <main className="flex-1">{children}</main>
+          </div>
+        </Providers>
       </body>
     </html>
   );

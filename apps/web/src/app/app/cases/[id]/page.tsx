@@ -34,7 +34,7 @@ interface CaseDetail {
 export default function CaseDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { toast } = useToast()
+  const { addToast: toast } = useToast()
   const { role } = useAuthContext()
   const { signXdr } = useWalletContext()
   const caseId = params.id as string
@@ -199,7 +199,7 @@ export default function CaseDetailPage() {
               {caseData.vote_history.map((vote, i) => (
                 <div key={i} className="flex items-center justify-between text-sm p-3 rounded-lg bg-zinc-800/50">
                   <span className="font-mono">{truncateAddress(vote.voter, 8)}</span>
-                  <Badge variant={vote.vote_for ? "default" : "destructive"}>
+                  <Badge variant={vote.vote_for ? "default" : "danger"}>
                     {vote.vote_for ? "For" : "Against"}
                   </Badge>
                   <span className="text-zinc-500 text-xs">{formatDate(vote.timestamp)}</span>

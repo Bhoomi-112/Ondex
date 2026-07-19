@@ -123,6 +123,9 @@ importers:
       '@radix-ui/react-toast':
         specifier: ^1.2.0
         version: 1.2.19(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@stellar/freighter-api':
+        specifier: ^6.0.1
+        version: 6.0.1
       '@stellar/stellar-sdk':
         specifier: ^16.0.1
         version: 16.0.1
@@ -2177,6 +2180,9 @@ packages:
 
   '@stellar/freighter-api@6.0.0':
     resolution: {integrity: sha512-8CTQcKQmTq/wL715ZUzn1x1POpR0eYhYPKEiaeA7AT0WYBOauOGTxfWPFtSidX3ohAlJZP5HFXy1kG29cVjqxw==}
+
+  '@stellar/freighter-api@6.0.1':
+    resolution: {integrity: sha512-eqwakEqSg+zoLuPpSbKyrX0pG8DQFzL/J5GtbfuMCmJI+h+oiC9pQ5C6QLc80xopZQKdGt8dUAFCmDMNdAG95w==}
 
   '@stellar/js-xdr@3.1.2':
     resolution: {integrity: sha512-VVolPL5goVEIsvuGqDc5uiKxV03lzfWdvYg1KikvwheDmTBO68CKDji3bAZ/kppZrx5iTA8z3Ld5yuytcvhvOQ==}
@@ -7809,6 +7815,11 @@ snapshots:
   '@standard-schema/spec@1.1.0': {}
 
   '@stellar/freighter-api@6.0.0':
+    dependencies:
+      buffer: 6.0.3
+      semver: 7.7.1
+
+  '@stellar/freighter-api@6.0.1':
     dependencies:
       buffer: 6.0.3
       semver: 7.7.1

@@ -11,7 +11,7 @@ export function useAuth() {
   const [session, setSession] = useState<{ wallet: string; role: UserRole } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { signXdr } = useWalletContext();
-  const { toast } = useToast();
+  const { addToast: toast } = useToast();
 
   const isAuthenticated = session !== null;
 

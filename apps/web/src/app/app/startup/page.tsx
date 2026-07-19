@@ -31,7 +31,7 @@ interface Campaign {
 }
 
 export default function StartupDashboard() {
-  const { toast } = useToast()
+  const { addToast: toast } = useToast()
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [dialogOpen, setDialogOpen] = React.useState(false)

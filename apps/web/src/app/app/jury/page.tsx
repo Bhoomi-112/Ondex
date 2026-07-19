@@ -26,7 +26,7 @@ interface Case {
 }
 
 export default function JuryDashboard() {
-  const { toast } = useToast()
+  const { addToast: toast } = useToast()
   const { signXdr } = useWalletContext()
   const [cases, setCases] = React.useState<Case[]>([])
   const [isLoading, setIsLoading] = React.useState(true)

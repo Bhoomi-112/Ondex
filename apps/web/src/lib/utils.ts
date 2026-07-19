@@ -38,3 +38,28 @@ export function timeAgo(timestamp: number): string {
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }
+
+export function truncateAddress(address: string, chars = 6): string {
+  return `${address.slice(0, chars)}...${address.slice(-chars)}`;
+}
+
+export function formatAmount(amount: number | string): string {
+  const num = typeof amount === "string" ? Number(amount) : amount;
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 7,
+  }).format(num);
+}
+
+export function formatDate(timestamp: string | number): string {
+  const date = new Date(typeof timestamp === "string" ? timestamp : timestamp * 1000);
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export function explorerTxUrl(hash: string): string {
+  return `https://stellar.expert/explorer/testnet/tx/${hash}`;
+}
