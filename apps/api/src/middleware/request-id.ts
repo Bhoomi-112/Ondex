@@ -11,4 +11,5 @@ export const requestIdMiddleware: RequestHandler = (req, res, _next) => {
   res.setHeader("X-Request-ID", requestId);
   res.locals.requestId = requestId;
   res.locals.logger = baseLogger.child({ requestId });
+  _next();
 };

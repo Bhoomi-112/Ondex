@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { config } from "../config.js";
 import healthRouter from "./v1/health.js";
 import authRouter from "./v1/auth.js";
 import campaignsRouter from "./v1/campaigns.js";
@@ -11,7 +12,11 @@ import { generalLimiter, authLimiter } from "../middleware/rate-limiter.js";
 export function registerRoutes(app: Express): void {
   app.use("/", healthRouter);
 
-  app.use("/api/v1/auth", authLimiter, authRouter);
+  if (config.nodeEnv === "production") {
+    app.use("/api/v1/auth", authLimiter, authRouter);
+  } else {
+    app.use("/api/v1/auth", authRouter);
+  }
   app.use("/api/v1/campaigns", generalLimiter, campaignsRouter);
   app.use("/api/v1/cases", generalLimiter, casesRouter);
   app.use("/api/v1/jurors", generalLimiter, jurorsRouter);

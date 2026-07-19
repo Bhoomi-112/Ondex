@@ -1,4 +1,5 @@
 let kitReady = false;
+let freighterDetected = false;
 
 async function ensureKit() {
   if (kitReady) return;
@@ -14,6 +15,19 @@ async function ensureKit() {
     selectedWalletId: FREIGHTER_ID,
   });
   kitReady = true;
+
+  try {
+    const freighterApi = await import("@creit.tech/stellar-wallets-kit/modules/freighter");
+    freighterDetected = true;
+  } catch {
+    freighterDetected = false;
+  }
+}
+
+async function tryFreighterDirect(xdr: string, passphrase: string): Promise<string> {
+  const freighter = await import("@stellar/freighter-api");
+  const result = await freighter.signTransaction(xdr, { networkPassphrase: passphrase });
+  return result;
 }
 
 export async function connectWallet(): Promise<string> {
@@ -41,15 +55,21 @@ export async function getWalletAddress(): Promise<string | null> {
   }
 }
 
-export async function signTransaction(xdr: string): Promise<string> {
+export async function signTransaction(xdr: string, address: string): Promise<string> {
   await ensureKit();
-  const { StellarWalletsKit, Networks } = await import("@creit.tech/stellar-wallets-kit");
-  const { address } = await StellarWalletsKit.getAddress();
-  const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr, {
-    address,
-    networkPassphrase: Networks.TESTNET,
-  });
-  return signedTxXdr;
+  const passphrase = "Test SDF Network ; September 2015";
+
+  try {
+    const { StellarWalletsKit, Networks } = await import("@creit.tech/stellar-wallets-kit");
+    const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr, {
+      address,
+      networkPassphrase: Networks.TESTNET,
+    });
+    return signedTxXdr;
+  } catch (kitErr) {
+    console.warn("StellarWalletsKit signTransaction failed, trying Freighter direct:", kitErr);
+    return tryFreighterDirect(xdr, passphrase);
+  }
 }
 
 export async function signBlob(blob: string): Promise<string> {

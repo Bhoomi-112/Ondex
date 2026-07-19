@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { config, requiredConfig } from "./config.js";
 import { createLogger } from "./lib/logger.js";
 import { prisma, checkDatabaseConnection } from "./lib/db.js";
