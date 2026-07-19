@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { requestChallenge, verifyChallenge, getCurrentSession, logout as authLogout } from "@/lib/auth";
-import { useWallet } from "./use-wallet";
+import { useWalletContext } from "@/components/wallet/wallet-provider";
 import { useToast } from "@/components/ui/toast";
 
 type UserRole = "startup" | "jury" | "investor";
@@ -10,7 +10,7 @@ type UserRole = "startup" | "jury" | "investor";
 export function useAuth() {
   const [session, setSession] = useState<{ wallet: string; role: UserRole } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { signXdr } = useWallet();
+  const { signXdr } = useWalletContext();
   const { toast } = useToast();
 
   const isAuthenticated = session !== null;
@@ -37,8 +37,8 @@ export function useAuth() {
       try {
         setIsLoading(true);
         const challenge = await requestChallenge(wallet);
-        const signedTxXdr = await signXdr(challenge.tx);
-        await verifyChallenge(wallet, signedTxXdr);
+        const signedTxXdr = await signXdr(challenge.challenge);
+        await verifyChallenge(wallet, challenge.challenge, signedTxXdr);
         const currentSession = await getCurrentSession();
         setSession(currentSession as { wallet: string; role: UserRole } | null);
         toast({ title: "Signed in successfully", variant: "success" });

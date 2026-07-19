@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import { requestIdMiddleware } from "./middleware/request-id.js";
 import { generalLimiter } from "./middleware/rate-limiter.js";
 import { errorHandler } from "./middleware/error-handler.js";
@@ -9,21 +10,14 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    origin: true,
     credentials: true,
   }),
 );
 app.use(requestIdMiddleware);
 app.use(express.json());
+app.use(cookieParser());
 app.use(generalLimiter);
-
-try {
-  const pkgName = "cookie" + "-" + "parser";
-  const mod = await import(pkgName);
-  app.use(mod.default());
-} catch {
-  // cookie-parser not installed; cookies will not be parsed from req.cookies
-}
 
 registerRoutes(app);
 

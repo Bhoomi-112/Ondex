@@ -42,8 +42,9 @@ export function useWallet() {
   }, []);
 
   const signXdr = useCallback(async (xdr: string): Promise<string> => {
-    return signTransaction(xdr);
-  }, []);
+    if (!address) throw new Error("Wallet not connected");
+    return signTransaction(xdr, address);
+  }, [address]);
 
   return {
     address,

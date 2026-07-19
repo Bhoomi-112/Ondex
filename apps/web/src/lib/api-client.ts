@@ -38,10 +38,15 @@ async function request<T>(
       const json = await res.json();
 
       if (!res.ok) {
-        const message =
-          typeof json === "object" && json !== null && "error" in json
-            ? String(json.error)
-            : `Request failed with status ${res.status}`;
+        let message = `Request failed with status ${res.status}`;
+        if (typeof json === "object" && json !== null && "error" in json) {
+          const err = json.error;
+          if (typeof err === "string") {
+            message = err;
+          } else if (typeof err === "object" && err !== null) {
+            message = err.message ?? JSON.stringify(err);
+          }
+        }
 
         if (res.status === 401) throw new AuthError(message);
         if (res.status === 404) throw new NotFoundError(message);
