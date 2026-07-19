@@ -1,97 +1,54 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { cn } from "@/lib/utils";
 
-interface TabsContextValue {
-  value: string
-  onValueChange: (value: string) => void
-}
+const Tabs = TabsPrimitive.Root;
 
-const TabsContext = React.createContext<TabsContextValue>({
-  value: "",
-  onValueChange: () => {},
-})
+const TabsList = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.List>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
+>(({ className, ...props }, ref) => (
+  <TabsPrimitive.List
+    ref={ref}
+    className={cn(
+      "inline-flex h-10 items-center justify-center rounded-md bg-card p-1 text-text-secondary",
+      className
+    )}
+    {...props}
+  />
+));
+TabsList.displayName = TabsPrimitive.List.displayName;
 
-function Tabs({
-  defaultValue,
-  value: controlledValue,
-  onValueChange: controlledOnChange,
-  children,
-  className,
-  ...props
-}: {
-  defaultValue?: string
-  value?: string
-  onValueChange?: (value: string) => void
-  children: React.ReactNode
-  className?: string
-} & React.HTMLAttributes<HTMLDivElement>) {
-  const [internalValue, setInternalValue] = React.useState(defaultValue ?? "")
-  const value = controlledValue ?? internalValue
-  const onValueChange = controlledOnChange ?? setInternalValue
+const TabsTrigger = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
+>(({ className, ...props }, ref) => (
+  <TabsPrimitive.Trigger
+    ref={ref}
+    className={cn(
+      "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-accent data-[state=active]:text-white data-[state=active]:shadow-sm",
+      className
+    )}
+    {...props}
+  />
+));
+TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
 
-  return (
-    <TabsContext.Provider value={{ value, onValueChange }}>
-      <div className={cn("w-full", className)} {...props}>
-        {children}
-      </div>
-    </TabsContext.Provider>
-  )
-}
+const TabsContent = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
+>(({ className, ...props }, ref) => (
+  <TabsPrimitive.Content
+    ref={ref}
+    className={cn(
+      "mt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+      className
+    )}
+    {...props}
+  />
+));
+TabsContent.displayName = TabsPrimitive.Content.displayName;
 
-function TabsList({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        "inline-flex h-10 items-center justify-center rounded-lg bg-zinc-800 p-1 text-zinc-400",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function TabsTrigger({
-  value,
-  className,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }) {
-  const context = React.useContext(TabsContext)
-  const isActive = context.value === value
-
-  return (
-    <button
-      className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all",
-        isActive
-          ? "bg-zinc-900 text-white shadow-sm"
-          : "hover:text-zinc-200",
-        className
-      )}
-      onClick={() => context.onValueChange(value)}
-      {...props}
-    />
-  )
-}
-
-function TabsContent({
-  value,
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { value: string }) {
-  const context = React.useContext(TabsContext)
-  if (context.value !== value) return null
-
-  return (
-    <div
-      className={cn("mt-2 focus-visible:outline-none", className)}
-      {...props}
-    />
-  )
-}
-
-export { Tabs, TabsList, TabsTrigger, TabsContent }
+export { Tabs, TabsList, TabsTrigger, TabsContent };

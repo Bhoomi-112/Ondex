@@ -6,10 +6,11 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsx src/generate-bindings.ts && tsc"
+    "build": "tsx src/generate-bindings.ts && tsc",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^13.0.0"
+    "@stellar/stellar-sdk": "^16.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

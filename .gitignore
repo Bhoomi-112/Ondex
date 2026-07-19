@@ -24,3 +24,15 @@ dist/
 # OS files
 .DS_Store
 Thumbs.db
+node_modules/
+.next/
+dist/
+target/
+*.wasm
+.env
+.env.local
+.turbo/
+pnpm-lock.yaml
+*.db
+*.db-shm
+*.db-wal
