@@ -1,31 +1,34 @@
 "use client";
 
-import { createContext, useContext } from "react";
-import { useWallet } from "@/hooks/use-wallet";
+import {
+  WalletProvider as BaseWalletProvider,
+  useWallet,
+} from "@/providers/wallet";
+
+export { BaseWalletProvider as WalletProvider };
 
 interface WalletContextValue {
   address: string | null;
   isConnected: boolean;
   isConnecting: boolean;
   connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
+  disconnect: () => Promise<void> | void;
   signXdr: (xdr: string) => Promise<string>;
 }
 
-const WalletContext = createContext<WalletContextValue | null>(null);
-
-export function WalletProvider({ children }: { children: React.ReactNode }) {
+/** Compatibility adapter over the single root WalletProvider. */
+export function useWalletContext(): WalletContextValue {
   const wallet = useWallet();
 
-  return (
-    <WalletContext.Provider value={wallet}>{children}</WalletContext.Provider>
-  );
-}
-
-export function useWalletContext(): WalletContextValue {
-  const ctx = useContext(WalletContext);
-  if (!ctx) {
-    throw new Error("useWalletContext must be used within a WalletProvider");
-  }
-  return ctx;
+  return {
+    address: wallet.address,
+    isConnected: wallet.address !== null,
+    isConnecting: wallet.isConnecting,
+    connect: wallet.connect,
+    disconnect: wallet.disconnect,
+    signXdr: async (xdr: string) => {
+      const result = await wallet.signTransaction(xdr);
+      return result.signedTxXdr;
+    },
+  };
 }
