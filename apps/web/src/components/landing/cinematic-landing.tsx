@@ -182,10 +182,7 @@ export default function CinematicLanding() {
 
       {!heroCollapsed && (
       <section className="relative min-h-screen flex flex-col items-start justify-center max-w-[1100px] mx-auto px-6 md:px-12">
-        <div
-          className="eyebrow"
-          style={{ opacity: 0, animation: "fade-up 0.8s ease forwards 0.1s" }}
-        >
+        <div className="eyebrow">
           Decentralized startup funding on Stellar
         </div>
 
@@ -196,8 +193,7 @@ export default function CinematicLanding() {
           {heroWords.map((w, i) => (
             <span
               key={i}
-              className={`word-reveal ${w.fade ? "text-text-secondary" : ""}`}
-              style={{ animationDelay: `${0.25 + i * 0.07}s` }}
+              className={`${w.fade ? "text-text-secondary" : ""}`}
             >
               {w.text}
               {i < heroWords.length - 1 ? "\u00A0" : ""}
@@ -205,18 +201,12 @@ export default function CinematicLanding() {
           ))}
         </h1>
 
-        <p
-          className="mt-7 text-[17px] text-text-secondary max-w-[520px] leading-relaxed"
-          style={{ opacity: 0, animation: "fade-up 0.8s ease forwards 0.9s" }}
-        >
+        <p className="mt-7 text-[17px] text-text-secondary max-w-[520px] leading-relaxed">
           Ondex connects startups with investors through transparent,
           milestone-based escrow powered by Soroban smart contracts on Stellar.
         </p>
 
-        <div
-          className="mt-10 flex gap-4 items-center"
-          style={{ opacity: 0, animation: "fade-up 0.8s ease forwards 1.1s" }}
-        >
+        <div className="mt-10 flex gap-4 items-center">
           <button
             onClick={connect}
             disabled={isConnecting}
@@ -229,10 +219,7 @@ export default function CinematicLanding() {
           </a>
         </div>
 
-        <div
-          className="scroll-cue"
-          style={{ opacity: 0, animation: "fade-up 0.8s ease forwards 1.6s" }}
-        >
+        <div className="scroll-cue">
           <div className="scroll-cue-line" />
           Scroll
         </div>
