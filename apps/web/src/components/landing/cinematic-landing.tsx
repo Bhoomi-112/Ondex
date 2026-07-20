@@ -81,6 +81,7 @@ export default function CinematicLanding() {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeStage, setActiveStage] = useState(0);
+  const [heroCollapsed, setHeroCollapsed] = useState(true);
   const stageRef = useRef<HTMLDivElement>(null);
 
   const onScroll = useCallback(() => {
@@ -96,11 +97,20 @@ export default function CinematicLanding() {
     return () => window.removeEventListener("scroll", onScroll);
   }, [onScroll]);
 
-  // Scroll to "what it does" after splash
+  // After hero expands, scroll past it to show #work
+  useEffect(() => {
+    if (!heroCollapsed) {
+      requestAnimationFrame(() => {
+        const el = document.getElementById("work");
+        if (el) el.scrollIntoView({ behavior: "instant", block: "start" });
+      });
+    }
+  }, [heroCollapsed]);
+
+  // On splash leaving: expand hero, scroll runs via effect above
   useEffect(() => {
     const scrollToWork = () => {
-      const el = document.getElementById("work");
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setHeroCollapsed(false);
     };
     window.addEventListener(SPLASH_LEAVING_EVENT, scrollToWork);
     return () => window.removeEventListener(SPLASH_LEAVING_EVENT, scrollToWork);
@@ -170,7 +180,7 @@ export default function CinematicLanding() {
         aria-valuemax={100}
       />
 
-      {/* Hero */}
+      {!heroCollapsed && (
       <section className="relative min-h-screen flex flex-col items-start justify-center max-w-[1100px] mx-auto px-6 md:px-12">
         <div
           className="eyebrow"
@@ -227,6 +237,7 @@ export default function CinematicLanding() {
           Scroll
         </div>
       </section>
+      )}
 
       {/* What it does */}
       <section id="work" className="relative px-6 md:px-12">
