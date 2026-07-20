@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ShieldCheck, ArrowRight } from "lucide-react";
+import { ShieldCheck, ArrowRight } from "lucide-react";
 import type { ReactNode } from "react";
-import { Logo } from "@/components/logo";
+
 
 export type RoleColor = "lavender" | "coral" | "amber";
 
@@ -85,18 +85,7 @@ export default function RoleGatePage({ config }: { config: RoleGateConfig }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <header className="flex items-center justify-between px-6 md:px-12 py-5">
-        <Link href="/" className="flex items-center gap-2" aria-label="Ondex home">
-          <Logo priority />
-        </Link>
-        <Link
-          href="/"
-          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to home
-        </Link>
-      </header>
+
 
       <main className="flex-1 flex flex-col items-center justify-center px-6 md:px-12 py-16">
         <div className="max-w-[640px] w-full text-center">
