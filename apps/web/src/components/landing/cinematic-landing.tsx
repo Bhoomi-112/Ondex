@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/providers/wallet";
 import { Logo } from "@/components/logo";
-import { SPLASH_LEAVING_EVENT } from "@/components/landing/intro-splash";
 
 const heroWords = [
   { text: "Fund", fade: false },
@@ -81,7 +80,6 @@ export default function CinematicLanding() {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeStage, setActiveStage] = useState(0);
-  const [heroCollapsed, setHeroCollapsed] = useState(true);
   const stageRef = useRef<HTMLDivElement>(null);
 
   const onScroll = useCallback(() => {
@@ -96,25 +94,6 @@ export default function CinematicLanding() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [onScroll]);
-
-  // After hero expands, scroll past it to show #work
-  useEffect(() => {
-    if (!heroCollapsed) {
-      requestAnimationFrame(() => {
-        const el = document.getElementById("work");
-        if (el) el.scrollIntoView({ behavior: "instant", block: "start" });
-      });
-    }
-  }, [heroCollapsed]);
-
-  // On splash leaving: expand hero, scroll runs via effect above
-  useEffect(() => {
-    const scrollToWork = () => {
-      setHeroCollapsed(false);
-    };
-    window.addEventListener(SPLASH_LEAVING_EVENT, scrollToWork);
-    return () => window.removeEventListener(SPLASH_LEAVING_EVENT, scrollToWork);
-  }, []);
 
   // IntersectionObserver for reveal blocks
   useEffect(() => {
@@ -180,7 +159,6 @@ export default function CinematicLanding() {
         aria-valuemax={100}
       />
 
-      {!heroCollapsed && (
       <section className="relative min-h-screen flex flex-col items-start justify-center max-w-[1100px] mx-auto px-6 md:px-12">
         <div className="eyebrow">
           Decentralized startup funding on Stellar
@@ -218,9 +196,7 @@ export default function CinematicLanding() {
             See how it works →
           </a>
         </div>
-
       </section>
-      )}
 
       {/* What it does */}
       <section id="work" className="relative px-6 md:px-12">
