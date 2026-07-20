@@ -4,25 +4,31 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useWallet } from "@/providers/wallet";
 import { useAuth } from "@/providers/auth";
+import type { UserRole } from "@/lib/auth-types";
 import { cn, formatAddress } from "@/lib/utils";
 import { fundTestnetAccount } from "@/lib/tx";
 import { useToast } from "@/components/ui/toast";
 import { Logo } from "@/components/logo";
 import { INTRO_REPLAY_EVENT } from "@/components/landing/intro-splash";
 import { LogOut, Menu, X, Droplets, Loader2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
-const navLinks = [
+const ROLE_DASHBOARD: Record<UserRole, string> = {
+  founder: "/startup",
+  investor: "/investor",
+  jury: "/jury",
+};
+
+const GUEST_LINKS = [
   { href: "/for/startups", label: "Startup" },
   { href: "/for/jury", label: "Jury" },
   { href: "/for/investors", label: "Investor" },
   { href: "/admin", label: "Admin" },
-  { href: "/login", label: "Login" },
 ];
 
 export function Navbar() {
   const { address, walletName } = useWallet();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const { addToast } = useToast();
   const pathname = usePathname();
   const router = useRouter();
@@ -30,6 +36,14 @@ export function Navbar() {
   const [funding, setFunding] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const isHome = pathname === "/";
+
+  const navLinks = useMemo(() => {
+    if (!user?.role) return GUEST_LINKS;
+    return [
+      { href: ROLE_DASHBOARD[user.role], label: "Dashboard" },
+      { href: "/admin", label: "Admin" },
+    ];
+  }, [user?.role]);
 
   const handleHomeLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
