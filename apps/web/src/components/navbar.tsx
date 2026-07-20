@@ -13,17 +13,23 @@ import { INTRO_REPLAY_EVENT } from "@/components/landing/intro-splash";
 import { LogOut, Menu, X, Droplets, Loader2 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 
-const ROLE_DASHBOARD: Record<UserRole, string> = {
-  founder: "/startup",
-  investor: "/investor",
-  jury: "/jury",
+const ROLE_NAV: Record<UserRole, Array<{ href: string; label: string }>> = {
+  founder: [
+    { href: "/startup", label: "Dashboard" },
+    { href: "/startup/apply", label: "Apply" },
+  ],
+  investor: [
+    { href: "/investor", label: "Dashboard" },
+  ],
+  jury: [
+    { href: "/jury", label: "Dashboard" },
+  ],
 };
 
 const GUEST_LINKS = [
   { href: "/for/startups", label: "Startup" },
   { href: "/for/jury", label: "Jury" },
   { href: "/for/investors", label: "Investor" },
-  { href: "/admin", label: "Admin" },
 ];
 
 export function Navbar() {
@@ -39,10 +45,7 @@ export function Navbar() {
 
   const navLinks = useMemo(() => {
     if (!user?.role) return GUEST_LINKS;
-    return [
-      { href: ROLE_DASHBOARD[user.role], label: "Dashboard" },
-      { href: "/admin", label: "Admin" },
-    ];
+    return ROLE_NAV[user?.role] ?? GUEST_LINKS;
   }, [user?.role]);
 
   const handleHomeLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {

@@ -156,20 +156,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       xdr: string,
       opts?: { networkPassphrase?: string },
     ): Promise<{ signedTxXdr: string; signerAddress: string }> => {
-      if (!address) throw new Error("Wallet not connected");
+      // Read address from closure OR localStorage to handle the case where
+      // loginWithWallet just connected the wallet (React hasn't re-rendered
+      // the closure yet).
+      const walletAddress = address || localStorage.getItem("ondex_wallet_address");
+      if (!walletAddress) throw new Error("Wallet not connected");
       const StellarWalletsKit = await getKit();
       let networkPassphrase = opts?.networkPassphrase;
       if (!networkPassphrase) {
         networkPassphrase = getNetworkConfig().networkPassphrase;
       }
-      const result = await StellarWalletsKit.signTransaction(xdr, {
-        networkPassphrase,
-        address,
-      });
-      return {
-        signedTxXdr: result.signedTxXdr,
-        signerAddress: result.signerAddress ?? address,
-      };
+
+      if (!xdr || typeof xdr !== "string" || xdr.length < 20) {
+        throw new Error("Invalid challenge from server — try logging out and back in");
+      }
+
+      try {
+        const module = StellarWalletsKit.selectedModule;
+        const result = await module.signTransaction(xdr, {
+          networkPassphrase,
+        });
+        return {
+          signedTxXdr: result.signedTxXdr,
+          signerAddress: result.signerAddress ?? walletAddress,
+        };
+      } catch (e: unknown) {
+        const msg = (e as { message?: string })?.message
+          || (typeof e === "string" && e)
+          || "Wallet rejected the signing request";
+        console.error("signTransaction failed:", msg);
+        throw new Error(msg);
+      }
     },
     [address],
   );

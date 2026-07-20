@@ -69,6 +69,7 @@ export default function IntroSplash() {
           alt="Ond"
           fill
           priority
+          sizes="min(78vw, 890px)"
           className="!w-auto h-full object-contain object-left opacity-0 animate-[rise_0.7s_cubic-bezier(.2,.9,.2,1)_forwards_0.25s]"
           style={{ left: 0 }}
         />
@@ -77,6 +78,7 @@ export default function IntroSplash() {
           alt="x."
           fill
           priority
+          sizes="min(78vw, 890px)"
           className="!w-auto h-full object-contain opacity-0 [animation:slideX_0.85s_cubic-bezier(.16,.9,.28,1)_forwards_0.55s,settle_0.5s_ease_forwards_1.4s]"
           style={{ left: `${X_LEFT_PERCENT}%` }}
         />

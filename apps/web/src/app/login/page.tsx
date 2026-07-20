@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/providers/auth";
@@ -21,10 +21,13 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (!loading && user?.role && user.onboardingStatus === "active") {
-    const next = searchParams.get("next");
-    router.replace(next || dashboardPathForRole(user.role));
-  }
+  useEffect(() => {
+    if (loading) return;
+    if (user?.role && user.onboardingStatus === "active") {
+      const next = searchParams.get("next");
+      router.replace(next || dashboardPathForRole(user.role));
+    }
+  }, [loading, user, searchParams, router]);
 
   const handleLogin = async () => {
     setBusy(true);
@@ -40,7 +43,8 @@ function LoginForm() {
         router.push(next || dashboardPathForRole(authed.role));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      console.error("Login failed:", err);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }

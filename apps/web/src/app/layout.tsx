@@ -3,6 +3,7 @@ import "./globals.css";
 import { SplashRoot } from "./splash-root";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "Ondex — Startup Funding on Stellar",
   description:
     "Decentralized startup funding marketplace powered by Soroban smart contracts on Stellar. Connects startups, jury, and investors through transparent, milestone-based escrow.",

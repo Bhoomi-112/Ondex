@@ -34,6 +34,31 @@ export type ApiApplication = {
     amount?: number | string;
     released?: boolean;
   }>;
+  tagline?: string;
+  website?: string;
+  logoUrl?: string;
+  logo_url?: string;
+  category?: string;
+  stage?: string;
+  problem?: string;
+  solution?: string;
+  targetMarket?: string;
+  target_market?: string;
+  marketSize?: string;
+  market_size?: string;
+  currentStatus?: string;
+  current_status?: string;
+  traction?: string;
+  teamBackground?: string;
+  team_background?: string;
+  socialLinks?: string;
+  social_links?: string;
+  previousExperience?: string;
+  previous_experience?: string;
+  useOfFunds?: string;
+  use_of_funds?: string;
+  revenueModel?: string;
+  revenue_model?: string;
 };
 
 export type ApiCase = {

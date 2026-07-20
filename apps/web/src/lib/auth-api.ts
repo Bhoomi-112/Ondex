@@ -157,7 +157,7 @@ export async function listJuryApplications(status?: string, mfaToken?: string) {
   }>(`/api/v1/auth/admin/jury-applications${q}`, { mfaToken });
 }
 
-export async function approveJuryApplication(id: string, mfaToken: string) {
+export async function approveJuryApplication(id: string, mfaToken?: string) {
   return authFetch<{ applicationId: string; user: AuthUser }>(
     `/api/v1/auth/admin/jury-applications/${id}/approve`,
     { method: "POST", body: "{}", mfaToken },
@@ -167,7 +167,7 @@ export async function approveJuryApplication(id: string, mfaToken: string) {
 export async function rejectJuryApplication(
   id: string,
   reason: string | undefined,
-  mfaToken: string,
+  mfaToken?: string,
 ) {
   return authFetch<{ application: { id: string; status: string } }>(
     `/api/v1/auth/admin/jury-applications/${id}/reject`,

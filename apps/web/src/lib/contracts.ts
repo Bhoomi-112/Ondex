@@ -25,29 +25,30 @@ export type PublicNetworkConfig = {
   apiBaseUrl?: string;
 };
 
-function requiredPublic(name: string): string {
-  const value = process.env[name];
-  if (!value) {
+function req(key: string, val: string | undefined): string {
+  if (!val) {
     throw new Error(
-      `Missing required env ${name}. Set it in .env (see .env.example).`,
+      `Missing required env ${key}. Set it in .env (see .env.example).`,
     );
   }
-  return value;
+  return val;
 }
 
 export function getNetworkConfig(): PublicNetworkConfig {
   return {
-    rpcUrl: requiredPublic("NEXT_PUBLIC_SOROBAN_RPC_URL"),
-    horizonUrl: requiredPublic("NEXT_PUBLIC_HORIZON_URL"),
-    networkPassphrase: requiredPublic("NEXT_PUBLIC_NETWORK_PASSPHRASE"),
-    explorerBaseUrl: requiredPublic("NEXT_PUBLIC_EXPLORER_BASE_URL"),
-    networkName: requiredPublic("NEXT_PUBLIC_NETWORK_NAME"),
-    escrowContractId: requiredPublic("NEXT_PUBLIC_ESCROW_CONTRACT_ID"),
-    juryRegistryContractId: requiredPublic(
+    rpcUrl: req("NEXT_PUBLIC_SOROBAN_RPC_URL", process.env.NEXT_PUBLIC_SOROBAN_RPC_URL),
+    horizonUrl: req("NEXT_PUBLIC_HORIZON_URL", process.env.NEXT_PUBLIC_HORIZON_URL),
+    networkPassphrase: req("NEXT_PUBLIC_NETWORK_PASSPHRASE", process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE),
+    explorerBaseUrl: req("NEXT_PUBLIC_EXPLORER_BASE_URL", process.env.NEXT_PUBLIC_EXPLORER_BASE_URL),
+    networkName: req("NEXT_PUBLIC_NETWORK_NAME", process.env.NEXT_PUBLIC_NETWORK_NAME),
+    escrowContractId: req("NEXT_PUBLIC_ESCROW_CONTRACT_ID", process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID),
+    juryRegistryContractId: req(
       "NEXT_PUBLIC_JURY_REGISTRY_CONTRACT_ID",
+      process.env.NEXT_PUBLIC_JURY_REGISTRY_CONTRACT_ID,
     ),
-    identityRegistryContractId: requiredPublic(
+    identityRegistryContractId: req(
       "NEXT_PUBLIC_IDENTITY_REGISTRY_CONTRACT_ID",
+      process.env.NEXT_PUBLIC_IDENTITY_REGISTRY_CONTRACT_ID,
     ),
     platformTokenContractId:
       process.env.NEXT_PUBLIC_PLATFORM_TOKEN_CONTRACT_ID || undefined,

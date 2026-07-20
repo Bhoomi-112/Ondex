@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/auth";
 import { completeProfile } from "@/lib/auth-api";
@@ -24,13 +24,14 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (!loading && user && !user.role) {
-    router.replace("/signup/role");
-  }
-
-  if (!loading && user?.onboardingStatus === "active" && user.role) {
-    router.replace(dashboardPathForRole(user.role));
-  }
+  useEffect(() => {
+    if (loading) return;
+    if (user && !user.role) {
+      router.replace("/signup/role");
+    } else if (user?.onboardingStatus === "active" && user.role) {
+      router.replace(dashboardPathForRole(user.role));
+    }
+  }, [loading, user, router]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -81,19 +81,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Wallet connection cancelled");
     }
 
-    const { challenge, network_passphrase } = await fetchChallenge(wallet);
-    const signed = await signTransaction(challenge, {
-      networkPassphrase:
-        network_passphrase || getNetworkConfig().networkPassphrase,
+    let challengeRes;
+    try {
+      challengeRes = await fetchChallenge(wallet);
+    } catch (err) {
+      console.error("fetchChallenge failed:", err);
+      throw new Error(
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Failed to get challenge from server",
+      );
+    }
+
+    const { challenge, network_passphrase } = challengeRes;
+    const passphrase = network_passphrase || getNetworkConfig().networkPassphrase;
+
+    console.debug("login challenge:", {
+      challengePrefix: challenge?.slice(0, 40),
+      challengeLength: challenge?.length,
+      passphrase,
     });
 
-    const { user: authed } = await verifyWalletAuth({
-      wallet,
-      challenge,
-      signedTx: signed.signedTxXdr,
-    });
-    setUser(authed);
-    return authed;
+    let signed;
+    try {
+      signed = await signTransaction(challenge, {
+        networkPassphrase: passphrase,
+      });
+    } catch (err) {
+      console.error("signTransaction failed:", err);
+      const msg =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Wallet signing cancelled or failed";
+      if (msg.includes("internal error") || msg.includes("parse")) {
+        console.warn(
+          "Challenge XDR may be invalid. Prefix (40 chars):",
+          challenge?.slice(0, 40),
+          "Length:",
+          challenge?.length,
+          "Network:",
+          passphrase,
+        );
+      }
+      throw new Error(msg);
+    }
+
+    try {
+      const { user: authed } = await verifyWalletAuth({
+        wallet,
+        challenge,
+        signedTx: signed.signedTxXdr,
+      });
+      setUser(authed);
+      return authed;
+    } catch (err) {
+      console.error("verifyWalletAuth failed:", err);
+      throw new Error(
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Server rejected authentication",
+      );
+    }
   }, [address, connect, signTransaction]);
 
   const logout = useCallback(async () => {

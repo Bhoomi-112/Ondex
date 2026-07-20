@@ -40,7 +40,7 @@ const createSchema = z.object({
   caseId: z.number().int().optional(),
 });
 
-router.get("/applications", requireAuth, async (req, res) => {
+router.get("", requireAuth, async (req, res) => {
   const startup = req.query.startup as string | undefined;
   const sessionWallet = res.locals.wallet as string | null;
   const role = res.locals.role as string | null;
@@ -72,7 +72,7 @@ router.get("/applications", requireAuth, async (req, res) => {
 });
 
 router.get(
-  "/applications/all",
+  "/all",
   requireAuth,
   requireRole("jury"),
   async (_req, res) => {
@@ -83,7 +83,7 @@ router.get(
 );
 
 router.post(
-  "/applications",
+  "",
   requireAuth,
   requireRole("founder"),
   validate(createSchema, "body"),
@@ -151,7 +151,7 @@ const voteSchema = z.object({
 });
 
 router.post(
-  "/applications/:id/votes",
+  "/:id/votes",
   requireAuth,
   requireRole("jury"),
   validate(voteSchema, "body"),
@@ -179,7 +179,7 @@ const statusSchema = z.object({
 });
 
 router.post(
-  "/applications/:id/status",
+  "/:id/status",
   requireAuth,
   requireAdmin,
   requireAdminMfa,
@@ -198,7 +198,7 @@ router.post(
 );
 
 router.get(
-  "/applications/:id/votes",
+  "/:id/votes",
   requireAuth,
   requireRole("jury"),
   async (req, res) => {
@@ -211,7 +211,7 @@ router.get(
 );
 
 router.get(
-  "/jury/applications",
+  "/applications",
   requireAuth,
   requireRole("jury"),
   async (_req, res) => {
@@ -221,7 +221,7 @@ router.get(
 );
 
 router.get(
-  "/jury/my-votes/:address",
+  "/my-votes/:address",
   requireAuth,
   requireRole("jury"),
   async (req, res) => {

@@ -98,7 +98,7 @@ export function loadConfig(): AppConfig {
       10,
     ),
     rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || "100", 10),
-    authRateLimitMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX || "10", 10),
+    authRateLimitMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX || "30", 10),
     adminAddress: requireEnv("ADMIN_ADDRESS"),
     secretsBackend: process.env.SECRETS_BACKEND || "env",
     contracts: {

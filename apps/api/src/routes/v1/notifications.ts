@@ -18,7 +18,7 @@ router.get(
   validate(listQuerySchema, "query"),
   async (req, res) => {
     const wallet = res.locals.wallet as string;
-    const q = req.query as unknown as z.infer<typeof listQuerySchema>;
+    const q = ((req as unknown as Record<string, unknown>).validatedQuery ?? req.query) as z.infer<typeof listQuerySchema>;
 
     const { items, total, unreadCount } =
       await notificationService.getNotifications(wallet, q.unreadOnly, q.limit, q.offset);

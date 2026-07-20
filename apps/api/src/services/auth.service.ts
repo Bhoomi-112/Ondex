@@ -139,8 +139,7 @@ export async function createChallenge(walletAddress: string) {
     .setTimeout(120)
     .build();
 
-  const txXdr = tx.toXDR();
-  const challengeB64 = Buffer.from(txXdr).toString("base64");
+  const challengeB64 = tx.toXDR();
   const challengeHash = hashToken(challengeB64);
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
 

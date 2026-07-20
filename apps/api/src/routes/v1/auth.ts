@@ -42,6 +42,7 @@ import * as userRepo from "../../repositories/user.repository.js";
 import * as authEventRepo from "../../repositories/auth-event.repository.js";
 
 const router = Router();
+const authedRouter = Router();
 
 const GENERIC = authService.GENERIC_AUTH_FAILURE;
 
@@ -175,7 +176,7 @@ router.post("/logout", optionalAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-router.get("/me", requireAuth, async (_req, res) => {
+authedRouter.get("/me", requireAuth, async (_req, res) => {
   const user = await authService.getMe(res.locals.userId as string);
   res.json({ user });
 });
@@ -190,7 +191,7 @@ const selectRoleSchema = z.object({
   role: z.enum(["founder", "investor"]),
 });
 
-router.post(
+authedRouter.post(
   "/select-role",
   requireAuth,
   validate(selectRoleSchema, "body"),
@@ -217,7 +218,7 @@ const profileSchema = z.object({
   bio: z.string().max(500).optional(),
 });
 
-router.post(
+authedRouter.post(
   "/complete-profile",
   requireAuth,
   validate(profileSchema, "body"),
@@ -243,7 +244,7 @@ const juryApplySchema = z.object({
   experience: z.string().max(2000).optional(),
 });
 
-router.post(
+authedRouter.post(
   "/jury/apply",
   requireAuth,
   validate(juryApplySchema, "body"),
@@ -267,7 +268,7 @@ router.post(
 
 // ── Admin MFA enrollment ────────────────────────────────────────────
 
-router.post(
+authedRouter.post(
   "/admin/mfa/enroll",
   requireAuth,
   requireAdmin,
@@ -288,7 +289,7 @@ const mfaConfirmSchema = z.object({
   token: z.string().regex(/^\d{6}$/),
 });
 
-router.post(
+authedRouter.post(
   "/admin/mfa/confirm",
   requireAuth,
   requireAdmin,
@@ -317,7 +318,7 @@ router.post(
 
 // ── Admin jury approval (MFA + audit) ────────────────────────────────
 
-router.get(
+authedRouter.get(
   "/admin/jury-applications",
   requireAuth,
   requireAdmin,
@@ -333,7 +334,7 @@ router.get(
   },
 );
 
-router.post(
+authedRouter.post(
   "/admin/jury-applications/:id/approve",
   requireAuth,
   requireAdmin,
@@ -356,7 +357,7 @@ const rejectSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
-router.post(
+authedRouter.post(
   "/admin/jury-applications/:id/reject",
   requireAuth,
   requireAdmin,
@@ -383,7 +384,7 @@ const adminRoleSchema = z.object({
 });
 
 /** Dedicated admin-only role assignment endpoint (never from user-facing bodies). */
-router.post(
+authedRouter.post(
   "/admin/users/:userId/role",
   requireAuth,
   requireAdmin,
@@ -409,4 +410,4 @@ router.post(
   },
 );
 
-export default router;
+export { router, authedRouter };

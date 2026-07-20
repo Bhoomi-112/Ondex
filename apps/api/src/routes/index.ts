@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import healthRouter from "./v1/health.js";
-import authRouter from "./v1/auth.js";
+import { router as authRouter, authedRouter } from "./v1/auth.js";
 import campaignsRouter from "./v1/campaigns.js";
 import casesRouter from "./v1/cases.js";
 import jurorsRouter from "./v1/jurors.js";
@@ -14,6 +14,7 @@ export function registerRoutes(app: Express): void {
 
   // Versioned routes (existing)
   app.use("/api/v1/auth", authLimiter, authRouter);
+  app.use("/api/v1/auth", generalLimiter, authedRouter);
   app.use("/api/v1/campaigns", generalLimiter, campaignsRouter);
   app.use("/api/v1/cases", generalLimiter, casesRouter);
   app.use("/api/v1/jurors", generalLimiter, jurorsRouter);

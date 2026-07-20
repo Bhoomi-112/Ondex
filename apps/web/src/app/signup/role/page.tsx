@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/auth";
 import { selectRole } from "@/lib/auth-api";
@@ -20,13 +20,16 @@ export default function RoleSelectPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"founder" | "investor" | null>(null);
 
-  if (!loading && user?.role) {
-    router.replace(
-      user.onboardingStatus === "active"
-        ? user.dashboardPath || "/onboarding"
-        : "/onboarding",
-    );
-  }
+  useEffect(() => {
+    if (loading) return;
+    if (user?.role) {
+      router.replace(
+        user.onboardingStatus === "active"
+          ? user.dashboardPath || "/onboarding"
+          : "/onboarding",
+      );
+    }
+  }, [loading, user, router]);
 
   const choose = async (role: "founder" | "investor") => {
     setBusy(role);

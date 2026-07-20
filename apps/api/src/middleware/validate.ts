@@ -20,7 +20,11 @@ export function validate(
       return;
     }
 
-    req[source] = result.data;
+    if (source === "query") {
+      (req as unknown as Record<string, unknown>).validatedQuery = result.data;
+    } else {
+      req[source] = result.data;
+    }
     next();
   };
 }

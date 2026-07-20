@@ -33,7 +33,8 @@ export default function SignupPage() {
         router.push(dashboardPathForRole(authed.role));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Signup failed");
+      console.error("Signup failed:", err);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
