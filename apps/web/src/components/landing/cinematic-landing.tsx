@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/providers/wallet";
+import { Logo } from "@/components/logo";
 
 const heroWords = [
   { text: "Fund", fade: false },
@@ -378,8 +379,9 @@ export default function CinematicLanding() {
               For Investors
             </Link>
           </div>
-          <div className="w-full mt-14 text-xs text-[#6b6a5e] border-t border-black/10 pt-6">
-            © {new Date().getFullYear()} Ondex. All rights reserved.
+          <div className="w-full mt-14 flex flex-wrap items-center justify-between gap-4 text-xs text-[#6b6a5e] border-t border-black/10 pt-6">
+            <Logo imgClassName="h-8 w-8" />
+            <span>© {new Date().getFullYear()} Ondex. All rights reserved.</span>
           </div>
         </div>
       </footer>

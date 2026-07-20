@@ -1,36 +1,171 @@
-import { Client as PlatformClient } from "./bindings/platform/client";
-import { Client as EscrowClient } from "./bindings/escrow/client";
+/**
+ * Contract + network config — env only, no hardcoded IDs or RPC URLs.
+ * Clients use regenerated bindings from WASM.
+ */
+import { Client as JuryClient } from "./bindings/jury/index";
+import { Client as EscrowClient } from "./bindings/escrow/index";
+import { Client as IdentityClient } from "./bindings/identity/index";
 
-export { PlatformClient, EscrowClient };
+export { JuryClient, EscrowClient, IdentityClient };
 
-export const PLATFORM_CONTRACT_ID = "CB3X25J5HTYZJT5YETSU7EJDL237L7DFBKPQNC3ZMKVNDR7RTZDD2BEV";
-export const ESCROW_CONTRACT_ID = "CC5YIIBETTIJ2DTYK5H5V4MIM574QH6KL3INPDTSFA5O43LRUVN6H3C3";
-export const RPC_URL = "https://soroban-testnet.stellar.org";
-export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
+/** @deprecated alias — use JuryClient */
+export type PlatformClient = JuryClient;
 
-let _platformClient: PlatformClient | null = null;
-let _escrowClient: EscrowClient | null = null;
+export type PublicNetworkConfig = {
+  rpcUrl: string;
+  horizonUrl: string;
+  networkPassphrase: string;
+  explorerBaseUrl: string;
+  networkName: string;
+  escrowContractId: string;
+  juryRegistryContractId: string;
+  identityRegistryContractId: string;
+  platformTokenContractId?: string;
+  xlmTokenContractId?: string;
+  apiBaseUrl?: string;
+};
 
-export function getPlatformClient(publicKey?: string, contractId?: string): PlatformClient {
-  if (!_platformClient || contractId || publicKey) {
-    _platformClient = new PlatformClient({
-      contractId: contractId || PLATFORM_CONTRACT_ID,
-      rpcUrl: RPC_URL,
-      networkPassphrase: NETWORK_PASSPHRASE,
-      ...(publicKey ? { publicKey } : {}),
-    });
+function requiredPublic(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `Missing required env ${name}. Set it in .env (see .env.example).`,
+    );
   }
-  return _platformClient;
+  return value;
 }
 
-export function getEscrowClient(publicKey?: string, contractId?: string): EscrowClient {
-  if (!_escrowClient || contractId || publicKey) {
-    _escrowClient = new EscrowClient({
-      contractId: contractId || ESCROW_CONTRACT_ID,
-      rpcUrl: RPC_URL,
-      networkPassphrase: NETWORK_PASSPHRASE,
-      ...(publicKey ? { publicKey } : {}),
-    });
+export function getNetworkConfig(): PublicNetworkConfig {
+  return {
+    rpcUrl: requiredPublic("NEXT_PUBLIC_SOROBAN_RPC_URL"),
+    horizonUrl: requiredPublic("NEXT_PUBLIC_HORIZON_URL"),
+    networkPassphrase: requiredPublic("NEXT_PUBLIC_NETWORK_PASSPHRASE"),
+    explorerBaseUrl: requiredPublic("NEXT_PUBLIC_EXPLORER_BASE_URL"),
+    networkName: requiredPublic("NEXT_PUBLIC_NETWORK_NAME"),
+    escrowContractId: requiredPublic("NEXT_PUBLIC_ESCROW_CONTRACT_ID"),
+    juryRegistryContractId: requiredPublic(
+      "NEXT_PUBLIC_JURY_REGISTRY_CONTRACT_ID",
+    ),
+    identityRegistryContractId: requiredPublic(
+      "NEXT_PUBLIC_IDENTITY_REGISTRY_CONTRACT_ID",
+    ),
+    platformTokenContractId:
+      process.env.NEXT_PUBLIC_PLATFORM_TOKEN_CONTRACT_ID || undefined,
+    xlmTokenContractId:
+      process.env.NEXT_PUBLIC_XLM_TOKEN_CONTRACT_ID || undefined,
+    apiBaseUrl: process.env.NEXT_PUBLIC_API_URL || undefined,
+  };
+}
+
+export function getEscrowContractId(): string {
+  return getNetworkConfig().escrowContractId;
+}
+
+export function getJuryRegistryContractId(): string {
+  return getNetworkConfig().juryRegistryContractId;
+}
+
+export function getIdentityRegistryContractId(): string {
+  return getNetworkConfig().identityRegistryContractId;
+}
+
+function clientOpts(publicKey?: string, contractId?: string, defaultId?: string) {
+  const cfg = getNetworkConfig();
+  return {
+    contractId: contractId || defaultId || "",
+    rpcUrl: cfg.rpcUrl,
+    networkPassphrase: cfg.networkPassphrase,
+    ...(publicKey ? { publicKey } : {}),
+  };
+}
+
+export function getJuryClient(
+  publicKey?: string,
+  contractId?: string,
+): JuryClient {
+  const cfg = getNetworkConfig();
+  return new JuryClient(
+    clientOpts(publicKey, contractId, cfg.juryRegistryContractId),
+  );
+}
+
+/** Back-compat name used by pages — points at jury_registry. */
+export function getPlatformClient(
+  publicKey?: string,
+  contractId?: string,
+): JuryClient {
+  return getJuryClient(publicKey, contractId);
+}
+
+export function getEscrowClient(
+  publicKey?: string,
+  contractId?: string,
+): EscrowClient {
+  const cfg = getNetworkConfig();
+  return new EscrowClient(
+    clientOpts(publicKey, contractId, cfg.escrowContractId),
+  );
+}
+
+export function getIdentityClient(
+  publicKey?: string,
+  contractId?: string,
+): IdentityClient {
+  const cfg = getNetworkConfig();
+  return new IdentityClient(
+    clientOpts(publicKey, contractId, cfg.identityRegistryContractId),
+  );
+}
+
+/**
+ * Prefer same-origin `/api/*` so auth cookies are set on the Next host.
+ * Next rewrites `/api/*` → API server (see next.config.mjs).
+ * Set NEXT_PUBLIC_API_URL only when the API is on a different origin in prod.
+ */
+export function apiUrl(path: string): string {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configured) {
+    return `${configured.replace(/\/$/, "")}${p}`;
   }
-  return _escrowClient;
+  if (typeof window !== "undefined") {
+    return p;
+  }
+  return `http://localhost:3001${p}`;
+}
+
+export function explorerTxUrl(
+  hash: string,
+  config?: PublicNetworkConfig,
+): string {
+  const base = (config ?? getNetworkConfig()).explorerBaseUrl.replace(
+    /\/$/,
+    "",
+  );
+  return `${base}/tx/${hash}`;
+}
+
+export function explorerContractUrl(
+  contractId: string,
+  config?: PublicNetworkConfig,
+): string {
+  const base = (config ?? getNetworkConfig()).explorerBaseUrl.replace(
+    /\/$/,
+    "",
+  );
+  return `${base}/contract/${contractId}`;
+}
+
+export type VoteTag =
+  | { tag: "For"; values: void }
+  | { tag: "Against"; values: void };
+
+export function voteFromApprove(approve: boolean): VoteTag {
+  return approve
+    ? { tag: "For", values: undefined as void }
+    : { tag: "Against", values: undefined as void };
+}
+
+export function xlmToStroops(xlm: number): bigint {
+  return BigInt(Math.round(xlm * 10_000_000));
 }

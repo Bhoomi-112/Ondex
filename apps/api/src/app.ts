@@ -1,22 +1,43 @@
 import express from "express";
+import cookieParser from "cookie-parser";
+import cors from "cors";
 import { requestIdMiddleware } from "./middleware/request-id.js";
 import { generalLimiter } from "./middleware/rate-limiter.js";
+import { securityHeaders } from "./middleware/security-headers.js";
+import { csrfProtection } from "./middleware/csrf.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { registerRoutes } from "./routes/index.js";
+import { config } from "./config.js";
 
 const app = express();
 
-app.use(requestIdMiddleware);
-app.use(express.json());
-app.use(generalLimiter);
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
 
-try {
-  const pkgName = "cookie" + "-" + "parser";
-  const mod = await import(pkgName);
-  app.use(mod.default());
-} catch {
-  // cookie-parser not installed; cookies will not be parsed from req.cookies
-}
+app.use(requestIdMiddleware);
+app.use(securityHeaders);
+
+const origins = config.corsOrigins
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin:
+      origins.includes("*") || origins.length === 0
+        ? config.nodeEnv === "production"
+          ? false
+          : true
+        : origins,
+    credentials: true,
+  }),
+);
+
+app.use(express.json({ limit: "100kb" }));
+app.use(cookieParser());
+app.use(generalLimiter);
+app.use(csrfProtection);
 
 registerRoutes(app);
 

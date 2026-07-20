@@ -36,6 +36,14 @@ export async function markRead(id: string) {
   });
 }
 
+/** IDOR-safe: only mark if notification belongs to wallet. */
+export async function markReadForWallet(id: string, wallet: string) {
+  return prisma.notification.updateMany({
+    where: { id, wallet },
+    data: { read: true },
+  });
+}
+
 export async function markAllRead(wallet: string) {
   return prisma.notification.updateMany({
     where: { wallet, read: false },

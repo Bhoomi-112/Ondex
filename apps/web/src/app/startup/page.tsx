@@ -11,9 +11,17 @@ import { TransactionStatus } from "@/components/ui/transaction-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowUpRight, CheckCircle2, XCircle, Clock, FileText, Lock } from "lucide-react";
 import { formatXLM, stroopsToXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
-import { getPlatformClient, getEscrowClient } from "@/lib/contracts";
+import {
+  getEscrowClient,
+  getNetworkConfig,
+} from "@/lib/contracts";
+import {
+  fetchApplicationsByStartup,
+  fetchApplicationVotes,
+  appId as resolveAppId,
+  type ApiApplication,
+} from "@/lib/api";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
-import { Networks } from "@stellar/stellar-sdk";
 import Link from "next/link";
 
 interface Application {
@@ -46,10 +54,6 @@ export default function StartupDashboard() {
     if (!address) return;
     setLoading(true);
     try {
-      const client = getPlatformClient(address);
-      const appsResult = await client.list_applications({ offset: BigInt(0), limit: BigInt(100) });
-      const rawApps = appsResult.result;
-
       const statusMap: Record<string, Application["status"]> = {
         Submitted: "Submitted",
         UnderReview: "UnderReview",
@@ -57,49 +61,49 @@ export default function StartupDashboard() {
         Rejected: "Rejected",
       };
 
-      const myApps: Application[] = rawApps
-        .filter((app: any) => app.startup === address)
-        .map((app: any) => {
-          const statusTag = app.status?.tag || "Submitted";
-          const milestones = app.milestones?.map((m: any, i: number) => ({
-            description: m.description || `Milestone ${i + 1}`,
-            amount: stroopsToXLM(m.amount),
-            released: false,
-          })) || [];
+      const rawApps = await fetchApplicationsByStartup(address);
+      const myApps: Application[] = rawApps.map((app: ApiApplication) => {
+        const statusTag = app.status || "Submitted";
+        const ask = app.askAmount ?? app.ask_amount ?? 0;
+        const askNum =
+          Number(ask) > 1e6 ? stroopsToXLM(Number(ask)) : Number(ask);
+        const milestones =
+          app.milestones?.map((m, i) => {
+            const amt = m.amount ?? 0;
+            return {
+              description: m.description || `Milestone ${i + 1}`,
+              amount:
+                Number(amt) > 1e6 ? stroopsToXLM(Number(amt)) : Number(amt),
+              released: !!m.released,
+            };
+          }) || [];
 
-          return {
-            id: Number(app.id),
-            name: app.name || "Anonymous",
-            pitch: app.pitch || "",
-            askAmount: stroopsToXLM(app.ask_amount),
-            status: statusMap[statusTag] || "Submitted",
-            milestones,
-          };
-        });
+        return {
+          id: resolveAppId(app),
+          name: app.name || "Anonymous",
+          pitch: app.pitch || "",
+          askAmount: askNum,
+          status: statusMap[statusTag] || "Submitted",
+          milestones,
+        };
+      });
 
       if (myApps.length > 0 && myApps[0].status === "Approved") {
         try {
           const escrowClient = getEscrowClient(address);
-          const milestoneCountResult = await escrowClient.get_milestone_count();
-          const totalMilestones = Number(milestoneCountResult.result);
-
-          const releasedCountResult = await escrowClient.get_released_count();
-          const releasedCount = Number(releasedCountResult.result);
-
-          const milestoneDetails = await Promise.allSettled(
-            Array.from({ length: totalMilestones }, (_, i) =>
-              escrowClient.get_milestone({ index: i })
-            )
-          );
-
-          for (let i = 0; i < totalMilestones && i < myApps[0].milestones.length; i++) {
-            const detail = milestoneDetails[i];
-            if (detail.status === "fulfilled") {
-              myApps[0].milestones[i].released = detail.status === "fulfilled" && (detail.value.result as any)?.released === true;
-            }
+          const camp = await escrowClient.get_campaign({
+            campaign_id: myApps[0].id,
+          });
+          const state = (camp.result as { state?: { tag?: string } })?.state
+            ?.tag;
+          if (state === "Released") {
+            myApps[0].milestones = myApps[0].milestones.map((m) => ({
+              ...m,
+              released: true,
+            }));
           }
         } catch {
-          // Escrow may not be initialized
+          // Escrow may not be open yet
         }
       }
 
@@ -107,20 +111,21 @@ export default function StartupDashboard() {
 
       if (myApps[0]) {
         try {
-          const votesResult = await client.get_votes({ app_id: BigInt(myApps[0].id) });
-          const votes = (votesResult.result || []).map((v: any) => ({
-            voter: v.voter,
-            approve: v.approve,
-            commentHash: v.comment_hash || "",
-            timestamp: Number(v.timestamp),
-          }));
-          setVotes(votes);
+          const votesRaw = await fetchApplicationVotes(myApps[0].id);
+          setVotes(
+            votesRaw.map((v) => ({
+              voter: v.voter || "",
+              approve: !!v.approve,
+              commentHash: "",
+              timestamp: Number(v.timestamp || 0),
+            })),
+          );
         } catch {
           setVotes([]);
         }
       }
     } catch (err) {
-      console.error("Failed to fetch applications from chain:", err);
+      console.error("Failed to fetch applications:", err);
     } finally {
       setLoading(false);
     }
@@ -132,23 +137,42 @@ export default function StartupDashboard() {
 
   const handleReleaseMilestone = async (index: number) => {
     if (!address) return;
+    const campaignId = applications[0]?.id;
+    if (campaignId == null) return;
 
     setTxStatus("signing");
     setTxError(undefined);
 
     try {
       setTxStatus("submitting");
+      // Layered release: mark jury approved (if not yet), then release when window allows
+      const escrow = getEscrowClient(address);
+      try {
+        await buildSignSubmit(
+          () => escrow.jury_approved({ campaign_id: campaignId }),
+          (xdr) =>
+            signTransaction(xdr, {
+              networkPassphrase: getNetworkConfig().networkPassphrase,
+            }),
+        );
+      } catch {
+        // already approved or not ready — continue to release
+      }
+
       const result = await buildSignSubmit(
-        () => getEscrowClient(address).release_milestone({ index }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        () => escrow.release({ campaign_id: campaignId }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
       setTxStatus("success");
 
       addToast({
-        title: "Milestone Released",
-        description: `Milestone ${index + 1} funds have been released from escrow.`,
+        title: "Funds Released",
+        description: `Campaign #${campaignId} funds released from escrow (milestone ${index + 1}).`,
         variant: "success",
         txHash: result.hash,
         txUrl: getExplorerUrl(result.hash),

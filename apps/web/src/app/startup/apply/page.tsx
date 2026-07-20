@@ -11,9 +11,13 @@ import { Label } from "@/components/ui/label";
 import { TransactionStatus } from "@/components/ui/transaction-status";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { getPlatformClient } from "@/lib/contracts";
+import {
+  getIdentityClient,
+  getNetworkConfig,
+  apiUrl,
+  xlmToStroops,
+} from "@/lib/contracts";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
-import { Networks } from "@stellar/stellar-sdk";
 
 interface MilestoneInput {
   description: string;
@@ -81,28 +85,59 @@ export default function ApplyPage() {
       );
 
       setTxStatus("submitting");
+
+      // Hybrid identity: commit hash on-chain (no PII); full application metadata off-chain
+      const encoder = new TextEncoder();
+      const preimage = encoder.encode(
+        `${address}:${companyName}:${pitch}:${Date.now()}`,
+      );
+      const hashBuf = new Uint8Array(
+        await crypto.subtle.digest("SHA-256", preimage),
+      );
+      // identity_id = first 16 bytes; commitment = full 32-byte hash
+      const identityBytes = hashBuf.slice(0, 16);
+      const commitmentBytes = hashBuf;
+
       const result = await buildSignSubmit(
-        () => getPlatformClient(address).submit_application({
+        () =>
+          getIdentityClient(address).commit({
+            identity_id: identityBytes as never,
+            commitment_hash: commitmentBytes as never,
+          }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
+      );
+
+      const createRes = await fetch(apiUrl("/api/applications"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           startup: address,
           name: companyName,
-          pitch: pitch,
-          ask_amount: BigInt(Math.round(askAmountNum * 10_000_000)),
+          pitch,
+          askAmount: xlmToStroops(askAmountNum).toString(),
+          maskName,
+          maskAddress,
           milestones: milestones.map((ms, i) => ({
             description: ms.description,
-            amount: milestoneAmounts[i],
+            amount: milestoneAmounts[i].toString(),
           })),
-          mask_name: maskName,
-          mask_address: maskAddress,
         }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
-      );
+      });
+
+      if (!createRes.ok) {
+        const errBody = await createRes.text();
+        throw new Error(errBody || "Failed to store application metadata");
+      }
 
       setTxHash(result.hash);
       setTxStatus("success");
 
       addToast({
         title: "Application Submitted",
-        description: `Your application "${companyName}" is now on-chain.`,
+        description: `Identity committed on-chain; "${companyName}" stored off-chain.`,
         variant: "success",
         txHash: result.hash,
         txUrl: getExplorerUrl(result.hash),

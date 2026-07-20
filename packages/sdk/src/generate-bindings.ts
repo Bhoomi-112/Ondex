@@ -5,6 +5,7 @@ import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ROOT = path.join(__dirname, "../../..");
 
 const CONTRACTS = [
   { name: "escrow-contract", crateName: "escrow_contract" },
@@ -13,6 +14,7 @@ const CONTRACTS = [
 ];
 
 const generatedDir = path.join(__dirname, "generated");
+const webBindingsDir = path.join(ROOT, "apps/web/src/lib/bindings");
 
 function hasStellarCli(): boolean {
   try {
@@ -27,60 +29,74 @@ function writeStub(contractName: string): void {
   const dir = path.join(generatedDir, contractName);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
-    path.join(dir, "client.ts"),
-    `export class Client {\n  static from(_options: unknown) {\n    return new Client();\n  }\n}\n`
-  );
-  fs.writeFileSync(path.join(dir, "types.ts"), "");
-  fs.writeFileSync(
     path.join(dir, "index.ts"),
-    `export { Client } from "./client.js";\n`
+    `export class Client {\n  static from(_options: unknown) {\n    return new Client();\n  }\n}\n`,
+  );
+}
+
+function copyGenerated(
+  srcIndex: string,
+  destDir: string,
+): void {
+  fs.mkdirSync(destDir, { recursive: true });
+  fs.copyFileSync(srcIndex, path.join(destDir, "index.ts"));
+  // compatibility shims for older import paths
+  fs.writeFileSync(
+    path.join(destDir, "client.ts"),
+    `export { Client } from "./index";\nexport type { Client as ClientType } from "./index";\n`,
+  );
+  fs.writeFileSync(
+    path.join(destDir, "types.ts"),
+    `export type * from "./index";\n`,
   );
 }
 
 function generateForContract(
   contract: { name: string; crateName: string },
-  useCli: boolean
+  useCli: boolean,
 ): void {
-  const contractsJsonPath = path.join(process.cwd(), "contracts.json");
   const wasmPath = path.join(
-    process.cwd(),
+    ROOT,
     "contracts/target/wasm32v1-none/release",
-    `${contract.crateName}.wasm`
+    `${contract.crateName}.wasm`,
   );
 
-  if (
-    !useCli ||
-    !fs.existsSync(contractsJsonPath) ||
-    !fs.existsSync(wasmPath)
-  ) {
+  if (!useCli || !fs.existsSync(wasmPath)) {
+    console.warn(`Stub: ${contract.name} (wasm or CLI missing)`);
     writeStub(contract.name);
     return;
   }
 
-  const tmpDir = path.join(
-    process.cwd(),
-    "packages/sdk/.bindings-tmp",
-    contract.name
-  );
+  const tmpDir = path.join(ROOT, "packages/sdk/.bindings-tmp", contract.name);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
   fs.mkdirSync(tmpDir, { recursive: true });
 
   try {
     execSync(
       `stellar contract bindings typescript --wasm "${wasmPath}" --output-dir "${tmpDir}" --overwrite`,
-      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     );
 
-    const srcDir = path.join(tmpDir, "src");
-    const destDir = path.join(generatedDir, contract.name);
-    fs.mkdirSync(destDir, { recursive: true });
-
-    for (const file of ["client.ts", "types.ts", "index.ts"]) {
-      const srcFile = path.join(srcDir, file);
-      if (fs.existsSync(srcFile)) {
-        fs.copyFileSync(srcFile, path.join(destDir, file));
-      }
+    const srcIndex = path.join(tmpDir, "src", "index.ts");
+    if (!fs.existsSync(srcIndex)) {
+      throw new Error(`No src/index.ts for ${contract.name}`);
     }
-  } catch {
+
+    const destDir = path.join(generatedDir, contract.name);
+    copyGenerated(srcIndex, destDir);
+
+    // Also publish into web bindings for direct app imports
+    const webName =
+      contract.crateName === "jury_registry"
+        ? "jury"
+        : contract.crateName === "escrow_contract"
+          ? "escrow"
+          : "identity";
+    copyGenerated(srcIndex, path.join(webBindingsDir, webName));
+
+    console.log(`Generated: ${contract.name}`);
+  } catch (err) {
+    console.error(`Failed ${contract.name}:`, err);
     writeStub(contract.name);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -88,8 +104,12 @@ function generateForContract(
 }
 
 const useCli = hasStellarCli();
+if (!useCli) {
+  console.warn("stellar CLI not found — writing stubs");
+}
+
 for (const contract of CONTRACTS) {
   generateForContract(contract, useCli);
 }
 
-console.log("SDK bindings generated.");
+console.log("SDK + web bindings generated.");

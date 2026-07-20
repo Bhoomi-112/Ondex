@@ -1,23 +1,37 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useState, useRef } from "react";
-import { Networks } from "@stellar/stellar-sdk";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { getNetworkConfig } from "@/lib/contracts";
 
 interface WalletContextType {
   address: string | null;
   walletName: string | null;
   isConnecting: boolean;
   connect: () => Promise<void>;
-  disconnect: () => void;
+  disconnect: () => Promise<void>;
   signTransaction: (
     xdr: string,
-    opts?: { networkPassphrase?: string }
+    opts?: { networkPassphrase?: string },
   ) => Promise<{ signedTxXdr: string; signerAddress: string }>;
 }
 
 const WalletContext = createContext<WalletContextType | null>(null);
 
 let kitReady = false;
+
+function networkNameFromEnv(): string {
+  return (
+    process.env.NEXT_PUBLIC_NETWORK_NAME ||
+    process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ||
+    ""
+  );
+}
 
 async function initKit() {
   if (kitReady || typeof window === "undefined") return;
@@ -27,9 +41,27 @@ async function initKit() {
   const { defaultModules } = await import(
     "@creit.tech/stellar-wallets-kit/modules/utils"
   );
+
+  let networkName = networkNameFromEnv();
+  if (!networkName) {
+    try {
+      networkName = getNetworkConfig().networkName;
+    } catch {
+      throw new Error(
+        "Wallet kit needs NEXT_PUBLIC_NETWORK_NAME (or full network env). Restart `pnpm dev` after editing apps/web/.env.local.",
+      );
+    }
+  }
+
+  const network =
+    networkName.toLowerCase() === "public" ||
+    networkName.toLowerCase() === "mainnet"
+      ? KitNetworks.PUBLIC
+      : KitNetworks.TESTNET;
+
   StellarWalletsKit.init({
     modules: defaultModules(),
-    network: KitNetworks.TESTNET,
+    network,
   });
   kitReady = true;
   return StellarWalletsKit;
@@ -39,6 +71,18 @@ async function getKit() {
   await initKit();
   const mod = await import("@creit.tech/stellar-wallets-kit");
   return mod.StellarWalletsKit;
+}
+
+function clearLocalWalletState(
+  setAddress: (v: string | null) => void,
+  setWalletName: (v: string | null) => void,
+) {
+  setAddress(null);
+  setWalletName(null);
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("ondex_wallet_address");
+    localStorage.removeItem("ondex_wallet_name");
+  }
 }
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -53,8 +97,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAddress(storedAddress);
       setWalletName(storedName);
     }
-    initKit();
+    initKit().catch((err) => {
+      console.warn("Wallet kit init deferred:", err);
+    });
   }, []);
+
+  async function walletNameFromKit(): Promise<string> {
+    try {
+      const stateMod = await import("@creit.tech/stellar-wallets-kit/state");
+      const id = stateMod.selectedModuleId.value;
+      const wallets = stateMod.allowedWallets.value;
+      return wallets.find((w: { id: string }) => w.id === id)?.name ?? "Unknown";
+    } catch {
+      return "Unknown";
+    }
+  }
 
   const connect = useCallback(async () => {
     setIsConnecting(true);
@@ -62,12 +119,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const StellarWalletsKit = await getKit();
       const result = await StellarWalletsKit.authModal();
       setAddress(result.address);
-      const name = localStorage.getItem("ondex_wallet_name") || "Freighter";
+      const name = await walletNameFromKit();
       setWalletName(name);
       localStorage.setItem("ondex_wallet_address", result.address);
-    } catch (err: any) {
-      if (err?.message !== "The user closed the modal.") {
+      localStorage.setItem("ondex_wallet_name", name);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? (err as { message: string }).message
+            : String(err);
+      if (message !== "The user closed the modal.") {
         console.error("Wallet connection failed:", err);
+        throw err instanceof Error ? err : new Error(message);
       }
     } finally {
       setIsConnecting(false);
@@ -75,28 +140,38 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const disconnect = useCallback(async () => {
-    const StellarWalletsKit = await getKit();
-    StellarWalletsKit.disconnect();
-    setAddress(null);
-    setWalletName(null);
-    localStorage.removeItem("ondex_wallet_address");
-    localStorage.removeItem("ondex_wallet_name");
+    // Always clear dApp session first — never block logout on kit/env init.
+    clearLocalWalletState(setAddress, setWalletName);
+    if (!kitReady) return;
+    try {
+      const mod = await import("@creit.tech/stellar-wallets-kit");
+      mod.StellarWalletsKit.disconnect();
+    } catch (err) {
+      console.warn("Wallet kit disconnect skipped:", err);
+    }
   }, []);
 
   const signTransaction = useCallback(
     async (
       xdr: string,
-      opts?: { networkPassphrase?: string }
+      opts?: { networkPassphrase?: string },
     ): Promise<{ signedTxXdr: string; signerAddress: string }> => {
       if (!address) throw new Error("Wallet not connected");
       const StellarWalletsKit = await getKit();
+      let networkPassphrase = opts?.networkPassphrase;
+      if (!networkPassphrase) {
+        networkPassphrase = getNetworkConfig().networkPassphrase;
+      }
       const result = await StellarWalletsKit.signTransaction(xdr, {
-        networkPassphrase: opts?.networkPassphrase || Networks.TESTNET,
+        networkPassphrase,
         address,
       });
-      return { signedTxXdr: result.signedTxXdr, signerAddress: result.signerAddress ?? address };
+      return {
+        signedTxXdr: result.signedTxXdr,
+        signerAddress: result.signerAddress ?? address,
+      };
     },
-    [address]
+    [address],
   );
 
   return (

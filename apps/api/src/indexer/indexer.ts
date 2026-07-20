@@ -80,6 +80,21 @@ export class EventIndexer {
   async start(): Promise<void> {
     const cursor = await indexerCursorRepo.getCursor();
     this.lastCursor = cursor.lastLedgerSeq;
+    // RPC only retains a bounded ledger window; seed from latest if empty/stale
+    try {
+      const latest = await this.rpcClient.getLatestLedger();
+      const latestSeq = latest.sequence;
+      if (this.lastCursor <= 0 || this.lastCursor < latestSeq - 100_000) {
+        this.lastCursor = latestSeq;
+        await indexerCursorRepo.updateCursor(this.lastCursor);
+        this.logger.info(
+          { lastCursor: this.lastCursor },
+          "Indexer cursor seeded to latest ledger",
+        );
+      }
+    } catch (err) {
+      this.logger.warn({ err }, "Could not seed indexer cursor from latest ledger");
+    }
     this.running = true;
     this.logger.info(
       { lastCursor: this.lastCursor, contracts: this.contracts.length },
@@ -117,11 +132,27 @@ export class EventIndexer {
       contractIds: [c.contractId],
     }));
 
-    const response = await this.rpcClient.getEvents({
-      filters,
-      startLedger: this.lastCursor + 1,
-      limit: 200,
-    });
+    let response: rpc.Api.GetEventsResponse;
+    try {
+      response = await this.rpcClient.getEvents({
+        filters,
+        startLedger: this.lastCursor + 1,
+        limit: 200,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("startLedger must be within the ledger range")) {
+        const latest = await this.rpcClient.getLatestLedger();
+        this.lastCursor = latest.sequence;
+        await indexerCursorRepo.updateCursor(this.lastCursor);
+        this.logger.warn(
+          { lastCursor: this.lastCursor },
+          "Resynced indexer cursor after out-of-range startLedger",
+        );
+        return;
+      }
+      throw err;
+    }
 
     if (!response.events || response.events.length === 0) {
       return;

@@ -1,5 +1,4 @@
 {
-  "platform": "CB3X25J5HTYZJT5YETSU7EJDL237L7DFBKPQNC3ZMKVNDR7RTZDD2BEV",
-  "escrow": "CC5YIIBETTIJ2DTYK5H5V4MIM574QH6KL3INPDTSFA5O43LRUVN6H3C3",
-  "network": "testnet"
+  "note": "Do not hardcode contract IDs here. Read generated contracts.json at repo root after deploy.",
+  "contractsJson": "../../contracts.json"
 }

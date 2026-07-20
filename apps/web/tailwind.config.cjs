@@ -81,11 +81,38 @@ module.exports = {
           "60%": { top: "100%" },
           "100%": { top: "100%" },
         },
+        gridIn: {
+          to: { opacity: "1" },
+        },
+        rise: {
+          from: { opacity: "0", transform: "translateY(12px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        slideX: {
+          "0%": {
+            opacity: "0",
+            transform: "translate3d(60vw, -55vh, 0) rotate(-22deg) scale(1.5)",
+          },
+          "55%": { opacity: "1" },
+          "100%": {
+            opacity: "1",
+            transform: "translate3d(0, 0, 0) rotate(0deg) scale(1)",
+            filter: "drop-shadow(0 0 26px rgba(35,167,214,0.6))",
+          },
+        },
+        settle: {
+          "0%": { filter: "drop-shadow(0 0 26px rgba(35,167,214,0.6))" },
+          "100%": { filter: "drop-shadow(0 0 0 rgba(35,167,214,0))" },
+        },
       },
       animation: {
         "reveal-word": "reveal-word 0.7s cubic-bezier(.22,.9,.3,1) forwards",
         "fade-up": "fade-up 0.8s ease forwards",
         "scroll-line": "scroll-line 1.8s ease-in-out infinite",
+        gridIn: "gridIn 1.2s ease forwards 0.2s",
+        rise: "rise 0.7s cubic-bezier(.2,.9,.2,1) forwards",
+        slideX: "slideX 0.85s cubic-bezier(.16,.9,.28,1) forwards",
+        settle: "settle 0.5s ease forwards",
       },
     },
   },

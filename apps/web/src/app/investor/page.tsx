@@ -20,9 +20,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Coins, TrendingUp, ExternalLink, Wallet } from "lucide-react";
 import { formatXLM, stroopsToXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
-import { getEscrowClient, getPlatformClient } from "@/lib/contracts";
+import {
+  getEscrowClient,
+  getNetworkConfig,
+  explorerContractUrl,
+  xlmToStroops,
+} from "@/lib/contracts";
+import { fetchCampaigns, type ApiCampaign } from "@/lib/api";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
-import { Networks } from "@stellar/stellar-sdk";
 
 interface Campaign {
   id: number;
@@ -50,92 +55,87 @@ export default function InvestorDashboard() {
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
 
-  const fetchCampaigns = useCallback(async () => {
+  const fetchCampaignsList = useCallback(async () => {
     setLoading(true);
     try {
-      const platformClient = getPlatformClient(address || undefined);
-      const appsResult = await platformClient.list_applications({ offset: BigInt(0), limit: BigInt(100) });
-      const rawApps = appsResult.result;
-
-      const approved = rawApps.filter((app: any) => app.status?.tag === "Approved");
-
+      const list = await fetchCampaigns();
       const escrowClient = getEscrowClient(address || undefined);
 
       const campaigns: Campaign[] = await Promise.all(
-        approved.map(async (app: any) => {
-          const askAmountNum = stroopsToXLM(app.ask_amount);
-          const appMilestones = app.milestones?.map((m: any) => ({
-            amount: stroopsToXLM(m.amount),
-            released: false,
-          })) || [];
+        list.map(async (c: ApiCampaign) => {
+          const id = Number(c.campaignId ?? c.campaign_id ?? c.id ?? 0);
+          const goalRaw = c.goal ?? c.totalAmount ?? c.total_amount ?? 0;
+          const goal =
+            Number(goalRaw) > 1e6 ? stroopsToXLM(Number(goalRaw)) : Number(goalRaw);
 
-          let totalDeposited = 0;
+          let totalDeposited =
+            Number(c.totalDeposited ?? c.total_deposited ?? c.totalAmount ?? c.total_amount ?? 0);
+          if (totalDeposited > 1e6) totalDeposited = stroopsToXLM(totalDeposited);
+
           let myDeposit = 0;
-          let releasedCount = 0;
-          let totalMilestones = appMilestones.length;
-          let campaignStatus = "Active";
+          let campaignStatus = c.status || c.state || "Active";
+          const milestones =
+            c.milestones?.map((m) => ({
+              amount:
+                Number(m.amount ?? 0) > 1e6
+                  ? stroopsToXLM(Number(m.amount))
+                  : Number(m.amount ?? 0),
+              released: !!m.released,
+            })) || [];
 
           try {
-            const [totalResult, milestoneCountResult, releasedCountResult, statusResult] = await Promise.allSettled([
-              escrowClient.get_total_deposited(),
-              escrowClient.get_milestone_count(),
-              escrowClient.get_released_count(),
-              escrowClient.get_campaign_status(),
-            ]);
-
-            if (totalResult.status === "fulfilled") {
-              totalDeposited = stroopsToXLM(totalResult.value.result);
+            const onChain = await escrowClient.get_campaign({ campaign_id: id });
+            const camp = onChain.result as {
+              total_amount?: bigint;
+              state?: { tag?: string };
+            };
+            if (camp?.total_amount != null) {
+              totalDeposited = stroopsToXLM(camp.total_amount);
             }
-            if (milestoneCountResult.status === "fulfilled") {
-              totalMilestones = Number(milestoneCountResult.value.result);
-            }
-            if (releasedCountResult.status === "fulfilled") {
-              releasedCount = Number(releasedCountResult.value.result);
-            }
-            if (statusResult.status === "fulfilled") {
-              const tag = (statusResult.value.result as any)?.tag;
-              if (tag) campaignStatus = tag;
-            }
+            if (camp?.state?.tag) campaignStatus = camp.state.tag;
 
             if (address) {
               try {
-                const depositResult = await escrowClient.get_deposit({ investor: address });
-                myDeposit = stroopsToXLM(depositResult.result);
+                const dep = await escrowClient.get_deposit({
+                  campaign_id: id,
+                  investor: address,
+                });
+                myDeposit = stroopsToXLM(dep.result);
               } catch {
                 myDeposit = 0;
               }
             }
           } catch {
-            // Escrow contract may not be initialized yet
+            // campaign may not exist on-chain yet
           }
 
           return {
-            id: Number(app.id),
-            appId: Number(app.id),
-            name: app.name || "Campaign #" + Number(app.id),
-            pitch: app.pitch || "",
-            goal: askAmountNum,
+            id,
+            appId: Number(c.appId ?? c.app_id ?? id),
+            name: c.name || `Campaign #${id}`,
+            pitch: c.pitch || "",
+            goal,
             totalDeposited,
             status: campaignStatus,
-            milestones: appMilestones,
+            milestones,
             myDeposit,
-            releasedCount,
-            totalMilestones,
+            releasedCount: milestones.filter((m) => m.released).length,
+            totalMilestones: milestones.length,
           };
-        })
+        }),
       );
 
       setCampaigns(campaigns);
     } catch (err) {
-      console.error("Failed to fetch campaigns from chain:", err);
+      console.error("Failed to fetch campaigns:", err);
     } finally {
       setLoading(false);
     }
   }, [address]);
 
   useEffect(() => {
-    fetchCampaigns();
-  }, [fetchCampaigns]);
+    fetchCampaignsList();
+  }, [fetchCampaignsList]);
 
   const handleDeposit = async () => {
     if (!address || !selectedCampaign || !depositAmount) return;
@@ -152,11 +152,16 @@ export default function InvestorDashboard() {
     try {
       setTxStatus("submitting");
       const result = await buildSignSubmit(
-        () => getEscrowClient(address).deposit({
-          investor: address,
-          amount: BigInt(Math.round(amount * 10_000_000)),
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        () =>
+          getEscrowClient(address).deposit({
+            campaign_id: selectedCampaign.id,
+            investor: address,
+            amount: xlmToStroops(amount),
+          }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
@@ -172,7 +177,7 @@ export default function InvestorDashboard() {
 
       setDepositDialogOpen(false);
       setDepositAmount("");
-      fetchCampaigns();
+      fetchCampaignsList();
     } catch (err: any) {
       setTxStatus("error");
       const msg = err?.message || String(err);
@@ -362,7 +367,7 @@ export default function InvestorDashboard() {
                         </Button>
                         <Button variant="secondary" size="icon" asChild>
                           <a
-                            href={`https://stellar.expert/explorer/testnet/contract/${campaign.id}`}
+                            href={explorerContractUrl(String(campaign.id))}
                             target="_blank"
                             rel="noopener noreferrer"
                           >

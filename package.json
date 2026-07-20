@@ -9,8 +9,10 @@
     "test": "turbo test",
     "build:contracts": "cargo build --target wasm32v1-none --release --manifest-path ./contracts/Cargo.toml",
     "deploy": "tsx scripts/deploy.ts",
+    "deploy:token": "tsx scripts/deploy-platform-token.ts",
     "fund": "tsx scripts/fund-testnet-account.ts",
-    "bindings:generate": "node scripts/generate-bindings.mjs"
+    "bindings:generate": "tsx packages/sdk/src/generate-bindings.ts",
+    "test:contracts": "cargo test --manifest-path ./contracts/Cargo.toml"
   },
   "devDependencies": {
     "@stellar/stellar-sdk": "^16.0.1",
