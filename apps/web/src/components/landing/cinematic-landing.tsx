@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/providers/wallet";
 import { Logo } from "@/components/logo";
+import { SPLASH_LEAVING_EVENT } from "@/components/landing/intro-splash";
 
 const heroWords = [
   { text: "Fund", fade: false },
@@ -80,7 +81,14 @@ export default function CinematicLanding() {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeStage, setActiveStage] = useState(0);
+  const [heroRevealed, setHeroRevealed] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const reveal = () => setHeroRevealed(true);
+    window.addEventListener(SPLASH_LEAVING_EVENT, reveal);
+    return () => window.removeEventListener(SPLASH_LEAVING_EVENT, reveal);
+  }, []);
 
   const onScroll = useCallback(() => {
     const scrollTop = window.scrollY;
@@ -160,7 +168,11 @@ export default function CinematicLanding() {
       />
 
       <section className="relative min-h-screen flex flex-col items-start justify-center max-w-[1100px] mx-auto px-6 md:px-12">
-        <div className="eyebrow">
+        <div
+          className={`eyebrow transition-all duration-[800ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+            heroRevealed ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+          }`}
+        >
           Decentralized startup funding on Stellar
         </div>
 
@@ -171,7 +183,15 @@ export default function CinematicLanding() {
           {heroWords.map((w, i) => (
             <span
               key={i}
-              className={`${w.fade ? "text-text-secondary" : ""}`}
+              className={`inline-block transition-all duration-[800ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+                heroRevealed
+                  ? "translate-y-0 opacity-100 blur-0"
+                  : "translate-y-4 opacity-0 blur-[4px]"
+              }`}
+              style={{
+                transitionDelay: heroRevealed ? `${0.12 + i * 0.06}s` : "0s",
+                color: w.fade ? "var(--color-text-secondary)" : undefined,
+              }}
             >
               {w.text}
               {i < heroWords.length - 1 ? "\u00A0" : ""}
@@ -179,12 +199,22 @@ export default function CinematicLanding() {
           ))}
         </h1>
 
-        <p className="mt-7 text-[17px] text-text-secondary max-w-[520px] leading-relaxed">
+        <p
+          className={`mt-7 text-[17px] text-text-secondary max-w-[520px] leading-relaxed transition-all duration-[800ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+            heroRevealed ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+          }`}
+          style={{ transitionDelay: heroRevealed ? "0.45s" : "0s" }}
+        >
           Ondex connects startups with investors through transparent,
           milestone-based escrow powered by Soroban smart contracts on Stellar.
         </p>
 
-        <div className="mt-10 flex gap-4 items-center">
+        <div
+          className={`mt-10 flex gap-4 items-center transition-all duration-[800ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+            heroRevealed ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+          }`}
+          style={{ transitionDelay: heroRevealed ? "0.65s" : "0s" }}
+        >
           <button
             onClick={connect}
             disabled={isConnecting}
