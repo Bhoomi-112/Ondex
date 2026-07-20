@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { WalletProvider } from "@/providers/wallet";
 import { AuthProvider } from "@/providers/auth";
 import { ToastProvider } from "@/components/ui/toast";
@@ -9,9 +9,12 @@ import IntroSplash, { SPLASH_LEAVING_EVENT } from "@/components/landing/intro-sp
 
 export function SplashRoot({ children }: { children: React.ReactNode }) {
   const [contentRevealed, setContentRevealed] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const reveal = () => setContentRevealed(true);
+    const reveal = () => {
+      setContentRevealed(true);
+    };
     window.addEventListener(SPLASH_LEAVING_EVENT, reveal);
     return () => window.removeEventListener(SPLASH_LEAVING_EVENT, reveal);
   }, []);
@@ -22,10 +25,11 @@ export function SplashRoot({ children }: { children: React.ReactNode }) {
         <ToastProvider>
           <IntroSplash />
           <div
-            className={`flex min-h-screen flex-col transition-all duration-[1100ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+            ref={contentRef}
+            className={`flex min-h-screen flex-col transition-all duration-[1000ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
               contentRevealed
-                ? "translate-y-0 opacity-100"
-                : "translate-y-[70vh] opacity-0"
+                ? "opacity-100 translate-y-0"
+                : "opacity-0 translate-y-6"
             }`}
           >
             <Navbar />
