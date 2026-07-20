@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/providers/wallet";
 import { Logo } from "@/components/logo";
+import { SPLASH_LEAVING_EVENT } from "@/components/landing/intro-splash";
 
 const heroWords = [
   { text: "Fund", fade: false },
@@ -94,6 +95,16 @@ export default function CinematicLanding() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [onScroll]);
+
+  // Scroll to "what it does" after splash
+  useEffect(() => {
+    const scrollToWork = () => {
+      const el = document.getElementById("work");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    window.addEventListener(SPLASH_LEAVING_EVENT, scrollToWork);
+    return () => window.removeEventListener(SPLASH_LEAVING_EVENT, scrollToWork);
+  }, []);
 
   // IntersectionObserver for reveal blocks
   useEffect(() => {

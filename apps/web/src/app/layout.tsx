@@ -1,10 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { WalletProvider } from "@/providers/wallet";
-import { AuthProvider } from "@/providers/auth";
-import { ToastProvider } from "@/components/ui/toast";
-import { Navbar } from "@/components/navbar";
-import IntroSplash from "@/components/landing/intro-splash";
+import { SplashRoot } from "./splash-root";
 
 export const metadata: Metadata = {
   title: "Ondex — Startup Funding on Stellar",
@@ -63,18 +59,7 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased">
-        <WalletProvider>
-          <AuthProvider>
-            <ToastProvider>
-              {/* Root-level: covers navbar + main on first home visit */}
-              <IntroSplash />
-              <div className="flex min-h-screen flex-col">
-                <Navbar />
-                <main className="flex-1 pt-16">{children}</main>
-              </div>
-            </ToastProvider>
-          </AuthProvider>
-        </WalletProvider>
+        <SplashRoot>{children}</SplashRoot>
       </body>
     </html>
   );

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 
 export const INTRO_REPLAY_EVENT = "ondex-intro-replay";
+export const SPLASH_LEAVING_EVENT = "ondex-splash-leaving";
+export const SPLASH_DONE_EVENT = "ondex-splash-done";
 
 const CONTAINER_ASPECT = 890 / 684;
 const X_LEFT_PERCENT = ((748 - 70) / 890) * 100;
@@ -17,7 +19,10 @@ export default function IntroSplash() {
   useEffect(() => {
     setLeaving(false);
     setHidden(false);
-    const t = setTimeout(() => setLeaving(true), HOLD_MS);
+    const t = setTimeout(() => {
+      setLeaving(true);
+      window.dispatchEvent(new CustomEvent(SPLASH_LEAVING_EVENT));
+    }, HOLD_MS);
     return () => clearTimeout(t);
   }, [playId]);
 
@@ -28,7 +33,10 @@ export default function IntroSplash() {
   }, []);
 
   const handleTransitionEnd = () => {
-    if (leaving) setHidden(true);
+    if (leaving) {
+      setHidden(true);
+      window.dispatchEvent(new CustomEvent(SPLASH_DONE_EVENT));
+    }
   };
 
   if (hidden) return null;
