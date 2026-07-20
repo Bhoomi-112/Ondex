@@ -219,10 +219,6 @@ export default function CinematicLanding() {
           </a>
         </div>
 
-        <div className="scroll-cue">
-          <div className="scroll-cue-line" />
-          Scroll
-        </div>
       </section>
       )}
 
