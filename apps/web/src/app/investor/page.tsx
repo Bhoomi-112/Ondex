@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useWallet } from "@/providers/wallet";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -20,14 +20,15 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Coins, TrendingUp, ExternalLink, Wallet } from "lucide-react";
 import { formatXLM, stroopsToXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
-import {
-  getEscrowClient,
-  getNetworkConfig,
-  explorerContractUrl,
-  xlmToStroops,
-} from "@/lib/contracts";
-import { fetchCampaigns, type ApiCampaign } from "@/lib/api";
+import { getEscrowClient, getPlatformClient } from "@/lib/contracts";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
+<<<<<<< Updated upstream
+import { Networks } from "@stellar/stellar-sdk";
+=======
+import { useCoachMarks } from "@/hooks/use-coach-marks";
+import { CoachMark } from "@/components/ui/coach-mark";
+import { EmptyState } from "@/components/ui/empty-state";
+>>>>>>> Stashed changes
 
 interface Campaign {
   id: number;
@@ -55,87 +56,128 @@ export default function InvestorDashboard() {
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
 
+<<<<<<< Updated upstream
+  const fetchCampaigns = useCallback(async () => {
+=======
+  const statsRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const depositRef = useRef<HTMLButtonElement>(null);
+
+  const coach = useCoachMarks({
+    storageKey: "investor_dashboard",
+    steps: [
+      {
+        id: "stats",
+        targetRef: statsRef,
+        title: "Your Portfolio",
+        description: "See your total invested, active campaigns, and portfolio at a glance.",
+        position: "bottom",
+      },
+      {
+        id: "tabs",
+        targetRef: tabsRef,
+        title: "Browse & Portfolio",
+        description: "Browse all approved campaigns or switch to My Investments to track your deposits.",
+        position: "top",
+      },
+      {
+        id: "deposit",
+        targetRef: depositRef,
+        title: "Deposit Funds",
+        description: "Click Deposit to lock XLM into a Soroban escrow contract for a campaign.",
+        position: "left",
+      },
+    ],
+    autoStart: true,
+  });
+
   const fetchCampaignsList = useCallback(async () => {
+>>>>>>> Stashed changes
     setLoading(true);
     try {
-      const list = await fetchCampaigns();
+      const platformClient = getPlatformClient(address || undefined);
+      const appsResult = await platformClient.list_applications({ offset: BigInt(0), limit: BigInt(100) });
+      const rawApps = appsResult.result;
+
+      const approved = rawApps.filter((app: any) => app.status?.tag === "Approved");
+
       const escrowClient = getEscrowClient(address || undefined);
 
       const campaigns: Campaign[] = await Promise.all(
-        list.map(async (c: ApiCampaign) => {
-          const id = Number(c.campaignId ?? c.campaign_id ?? c.id ?? 0);
-          const goalRaw = c.goal ?? c.totalAmount ?? c.total_amount ?? 0;
-          const goal =
-            Number(goalRaw) > 1e6 ? stroopsToXLM(Number(goalRaw)) : Number(goalRaw);
+        approved.map(async (app: any) => {
+          const askAmountNum = stroopsToXLM(app.ask_amount);
+          const appMilestones = app.milestones?.map((m: any) => ({
+            amount: stroopsToXLM(m.amount),
+            released: false,
+          })) || [];
 
-          let totalDeposited =
-            Number(c.totalDeposited ?? c.total_deposited ?? c.totalAmount ?? c.total_amount ?? 0);
-          if (totalDeposited > 1e6) totalDeposited = stroopsToXLM(totalDeposited);
-
+          let totalDeposited = 0;
           let myDeposit = 0;
-          let campaignStatus = c.status || c.state || "Active";
-          const milestones =
-            c.milestones?.map((m) => ({
-              amount:
-                Number(m.amount ?? 0) > 1e6
-                  ? stroopsToXLM(Number(m.amount))
-                  : Number(m.amount ?? 0),
-              released: !!m.released,
-            })) || [];
+          let releasedCount = 0;
+          let totalMilestones = appMilestones.length;
+          let campaignStatus = "Active";
 
           try {
-            const onChain = await escrowClient.get_campaign({ campaign_id: id });
-            const camp = onChain.result as {
-              total_amount?: bigint;
-              state?: { tag?: string };
-            };
-            if (camp?.total_amount != null) {
-              totalDeposited = stroopsToXLM(camp.total_amount);
+            const [totalResult, milestoneCountResult, releasedCountResult, statusResult] = await Promise.allSettled([
+              escrowClient.get_total_deposited(),
+              escrowClient.get_milestone_count(),
+              escrowClient.get_released_count(),
+              escrowClient.get_campaign_status(),
+            ]);
+
+            if (totalResult.status === "fulfilled") {
+              totalDeposited = stroopsToXLM(totalResult.value.result);
             }
-            if (camp?.state?.tag) campaignStatus = camp.state.tag;
+            if (milestoneCountResult.status === "fulfilled") {
+              totalMilestones = Number(milestoneCountResult.value.result);
+            }
+            if (releasedCountResult.status === "fulfilled") {
+              releasedCount = Number(releasedCountResult.value.result);
+            }
+            if (statusResult.status === "fulfilled") {
+              const tag = (statusResult.value.result as any)?.tag;
+              if (tag) campaignStatus = tag;
+            }
 
             if (address) {
               try {
-                const dep = await escrowClient.get_deposit({
-                  campaign_id: id,
-                  investor: address,
-                });
-                myDeposit = stroopsToXLM(dep.result);
+                const depositResult = await escrowClient.get_deposit({ investor: address });
+                myDeposit = stroopsToXLM(depositResult.result);
               } catch {
                 myDeposit = 0;
               }
             }
           } catch {
-            // campaign may not exist on-chain yet
+            // Escrow contract may not be initialized yet
           }
 
           return {
-            id,
-            appId: Number(c.appId ?? c.app_id ?? id),
-            name: c.name || `Campaign #${id}`,
-            pitch: c.pitch || "",
-            goal,
+            id: Number(app.id),
+            appId: Number(app.id),
+            name: app.name || "Campaign #" + Number(app.id),
+            pitch: app.pitch || "",
+            goal: askAmountNum,
             totalDeposited,
             status: campaignStatus,
-            milestones,
+            milestones: appMilestones,
             myDeposit,
-            releasedCount: milestones.filter((m) => m.released).length,
-            totalMilestones: milestones.length,
+            releasedCount,
+            totalMilestones,
           };
-        }),
+        })
       );
 
       setCampaigns(campaigns);
     } catch (err) {
-      console.error("Failed to fetch campaigns:", err);
+      console.error("Failed to fetch campaigns from chain:", err);
     } finally {
       setLoading(false);
     }
   }, [address]);
 
   useEffect(() => {
-    fetchCampaignsList();
-  }, [fetchCampaignsList]);
+    fetchCampaigns();
+  }, [fetchCampaigns]);
 
   const handleDeposit = async () => {
     if (!address || !selectedCampaign || !depositAmount) return;
@@ -152,16 +194,11 @@ export default function InvestorDashboard() {
     try {
       setTxStatus("submitting");
       const result = await buildSignSubmit(
-        () =>
-          getEscrowClient(address).deposit({
-            campaign_id: selectedCampaign.id,
-            investor: address,
-            amount: xlmToStroops(amount),
-          }),
-        (xdr) =>
-          signTransaction(xdr, {
-            networkPassphrase: getNetworkConfig().networkPassphrase,
-          }),
+        () => getEscrowClient(address).deposit({
+          investor: address,
+          amount: BigInt(Math.round(amount * 10_000_000)),
+        }),
+        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
       );
 
       setTxHash(result.hash);
@@ -177,7 +214,7 @@ export default function InvestorDashboard() {
 
       setDepositDialogOpen(false);
       setDepositAmount("");
-      fetchCampaignsList();
+      fetchCampaigns();
     } catch (err: any) {
       setTxStatus("error");
       const msg = err?.message || String(err);
@@ -228,7 +265,7 @@ export default function InvestorDashboard() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3 mb-8">
+      <div ref={statsRef} className="grid gap-4 sm:grid-cols-3 mb-8">
         <Card>
           <CardContent className="py-4">
             <div className="flex items-center gap-3">
@@ -279,7 +316,7 @@ export default function InvestorDashboard() {
       )}
 
       <Tabs defaultValue="browse" className="space-y-6">
-        <TabsList>
+        <TabsList ref={tabsRef}>
           <TabsTrigger value="browse">Browse Campaigns ({campaigns.length})</TabsTrigger>
           <TabsTrigger value="portfolio">My Investments ({myInvestments.length})</TabsTrigger>
         </TabsList>
@@ -291,17 +328,11 @@ export default function InvestorDashboard() {
               <Skeleton className="h-48 w-full" />
             </div>
           ) : campaigns.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Coins className="h-12 w-12 text-text-muted mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-text-primary mb-2">
-                  No Campaigns Available
-                </h3>
-                <p className="text-text-secondary">
-                  Check back later for approved campaigns to invest in.
-                </p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={<Coins className="h-7 w-7 text-amber" />}
+              title="No Campaigns Available"
+              description="There are no jury-approved campaigns yet. Check back later or explore the platform overview."
+            />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               {campaigns.map((campaign) => {
@@ -356,6 +387,7 @@ export default function InvestorDashboard() {
 
                       <div className="flex gap-2">
                         <Button
+                          ref={campaigns.length > 0 && campaigns[0].id === campaign.id ? depositRef : undefined}
                           className="flex-1"
                           onClick={() => {
                             setSelectedCampaign(campaign);
@@ -367,7 +399,7 @@ export default function InvestorDashboard() {
                         </Button>
                         <Button variant="secondary" size="icon" asChild>
                           <a
-                            href={explorerContractUrl(String(campaign.id))}
+                            href={`https://stellar.expert/explorer/testnet/contract/${campaign.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
@@ -385,11 +417,11 @@ export default function InvestorDashboard() {
 
         <TabsContent value="portfolio" className="space-y-4">
           {myInvestments.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-text-secondary">You haven&apos;t invested in any campaigns yet.</p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={<Wallet className="h-7 w-7 text-text-muted" />}
+              title="No Investments Yet"
+              description="Browse campaigns above and make your first deposit into an escrow contract."
+            />
           ) : (
             <div className="space-y-3">
               {myInvestments.map((campaign) => (
@@ -476,6 +508,20 @@ export default function InvestorDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {coach.isActive && coach.currentStepData && (
+        <CoachMark
+          isOpen={coach.isActive}
+          onClose={coach.dismiss}
+          onNext={coach.next}
+          title={coach.currentStepData.title}
+          description={coach.currentStepData.description}
+          targetRef={coach.currentStepData.targetRef}
+          position={coach.currentStepData.position}
+          step={coach.currentStep ?? 0}
+          totalSteps={coach.totalSteps}
+        />
+      )}
     </div>
   );
 }

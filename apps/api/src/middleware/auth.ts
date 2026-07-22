@@ -1,59 +1,23 @@
 import type { RequestHandler } from "express";
-import { ForbiddenError, UnauthorizedError } from "../lib/errors.js";
-import { verifyAccessToken } from "../lib/jwt.js";
-import type { UserRole } from "../lib/roles.js";
-import { ACCESS_COOKIE } from "../lib/cookies.js";
-import { config } from "../config.js";
-import { clientIp, deviceFingerprint } from "../lib/request-meta.js";
-import * as authEventRepo from "../repositories/auth-event.repository.js";
-import { checkRoleCheckBurst } from "../services/anomaly.service.js";
-import * as userRepo from "../repositories/user.repository.js";
-import {
-  decryptMfaSecret,
-  verifyTotp,
-} from "../lib/mfa.js";
+import { UnauthorizedError } from "../lib/errors.js";
+import * as authService from "../services/auth.service.js";
 
-export type AuthLocals = {
-  userId: string;
-  wallet: string | null;
-  email: string | null;
-  role: UserRole | null;
-  onboardingStatus: string;
-};
-
-function extractAccessToken(req: {
-  cookies?: Record<string, string>;
-  headers: { authorization?: string };
-}): string | undefined {
-  const fromCookie = req.cookies?.[ACCESS_COOKIE];
-  if (fromCookie) return fromCookie;
-
-  const header = req.headers.authorization;
-  if (header?.startsWith("Bearer ")) return header.slice(7);
-  return undefined;
-}
-
-/**
- * Route guards re-verified server-side on every request.
- * Role is taken only from the verified JWT claim (not client body/query).
- */
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
-    const token = extractAccessToken(req);
-    if (!token) {
+    const sessionId =
+      req.cookies?.session ??
+      (() => {
+        const header = req.headers.authorization;
+        if (header?.startsWith("Bearer ")) return header.slice(7);
+        return undefined;
+      })();
+
+    if (!sessionId) {
       throw new UnauthorizedError("Missing session");
     }
 
-    const claims = await verifyAccessToken(token);
-    if (!claims) {
-      throw new UnauthorizedError("Invalid or expired access token");
-    }
-
-    res.locals.userId = claims.sub;
-    res.locals.wallet = claims.wallet;
-    res.locals.email = claims.email;
-    res.locals.role = claims.role;
-    res.locals.onboardingStatus = claims.onboardingStatus;
+    const wallet = await authService.validateSession(sessionId);
+    res.locals.wallet = wallet;
     next();
   } catch (err) {
     next(err);
@@ -62,22 +26,26 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 
 export const optionalAuth: RequestHandler = async (req, res, next) => {
   try {
-    const token = extractAccessToken(req);
-    if (token) {
-      const claims = await verifyAccessToken(token);
-      if (claims) {
-        res.locals.userId = claims.sub;
-        res.locals.wallet = claims.wallet;
-        res.locals.email = claims.email;
-        res.locals.role = claims.role;
-        res.locals.onboardingStatus = claims.onboardingStatus;
-      }
+    const sessionId =
+      req.cookies?.session ??
+      (() => {
+        const header = req.headers.authorization;
+        if (header?.startsWith("Bearer ")) return header.slice(7);
+        return undefined;
+      })();
+
+    if (sessionId) {
+      const wallet = await authService.validateSession(sessionId);
+      res.locals.wallet = wallet;
     }
+
     next();
   } catch {
     next();
   }
 };
+<<<<<<< Updated upstream
+=======
 
 export function requireRole(...roles: UserRole[]): RequestHandler {
   return async (req, res, next) => {
@@ -152,6 +120,10 @@ export const requireAdmin: RequestHandler = async (req, res, next) => {
  */
 export const requireAdminMfa: RequestHandler = async (req, res, next) => {
   try {
+    if (config.nodeEnv === "development") {
+      return next();
+    }
+
     const userId = res.locals.userId as string | undefined;
     if (!userId) throw new UnauthorizedError("Missing session");
 
@@ -208,3 +180,4 @@ export function assertResourceOwner(
   }
   throw new ForbiddenError("Not authorized for this resource");
 }
+>>>>>>> Stashed changes

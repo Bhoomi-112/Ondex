@@ -57,6 +57,12 @@ export async function middleware(request: NextRequest) {
       login.searchParams.set("next", pathname);
       return NextResponse.redirect(login);
     }
+
+    const adminWallet = process.env.ADMIN_ADDRESS;
+    if (adminWallet && claims.wallet !== adminWallet) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+
     return NextResponse.next();
   }
 

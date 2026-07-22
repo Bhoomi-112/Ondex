@@ -28,7 +28,7 @@ import {
   getNetworkConfig,
   apiUrl,
 } from "@/lib/contracts";
-import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
+import { buildSignSubmit, signAndSendSorobanTx, getExplorerUrl } from "@/lib/tx";
 import { formatAddress } from "@/lib/utils";
 import { JuryApplicationsPanel } from "@/components/admin/jury-applications-panel";
 
@@ -39,11 +39,6 @@ type JurorRow = {
   active?: boolean;
 };
 
-const ADMIN_EMAILS = [
-  "phadtareshivansh@gmail.com",
-  "bhoomiawhad02@gmail.com",
-];
-
 export default function AdminPage() {
   const { address, signTransaction, connect, isConnecting } = useWallet();
   const { addToast } = useToast();
@@ -51,8 +46,6 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [onChainAdmin, setOnChainAdmin] = useState<string>("");
-  const [adminEmail, setAdminEmail] = useState("");
-  const [emailAuthed, setEmailAuthed] = useState(false);
   const [jurySize, setJurySize] = useState(5);
   const [slashPct, setSlashPct] = useState<number | null>(null);
   const [jurors, setJurors] = useState<JurorRow[]>([]);
@@ -68,24 +61,6 @@ export default function AdminPage() {
   >("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
-
-  const handleEmailLogin = () => {
-    const email = adminEmail.trim().toLowerCase();
-    if (ADMIN_EMAILS.includes(email)) {
-      setEmailAuthed(true);
-      addToast({
-        title: "Admin email verified",
-        description: "Read-only access. Connect the admin wallet for contract operations.",
-        variant: "success",
-      });
-    } else {
-      addToast({
-        title: "Unauthorized",
-        description: "This email is not registered as an admin.",
-        variant: "error",
-      });
-    }
-  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,17 +185,14 @@ export default function AdminPage() {
       const [minXlm, minPlatform] = mins.result as readonly [bigint, bigint];
 
       setTxStatus("submitting");
-      const result = await buildSignSubmit(
-        () =>
-          jury.register_sponsored({
-            juror,
-            xlm_stake: minXlm,
-            platform_stake: minPlatform,
-          }),
-        (xdr) =>
-          signTransaction(xdr, {
-            networkPassphrase: getNetworkConfig().networkPassphrase,
-          }),
+      const result = await signAndSendSorobanTx(
+        await jury.register_sponsored({
+          juror,
+          xlm_stake: minXlm,
+          platform_stake: minPlatform,
+        }),
+        signTransaction,
+        address,
       );
 
       setTxHash(result.hash);
@@ -285,17 +257,14 @@ export default function AdminPage() {
 
     try {
       setTxStatus("submitting");
-      const result = await buildSignSubmit(
-        () =>
-          getJuryClient(address).assign({
-            case_id: cid,
-            jurors: selected,
-            dispute_window_secs: BigInt(windowSecs),
-          }),
-        (xdr) =>
-          signTransaction(xdr, {
-            networkPassphrase: getNetworkConfig().networkPassphrase,
-          }),
+      const result = await signAndSendSorobanTx(
+        await getJuryClient(address).assign({
+          case_id: cid,
+          jurors: selected,
+          dispute_window_secs: BigInt(windowSecs),
+        }),
+        signTransaction,
+        address,
       );
 
       setTxHash(result.hash);
@@ -319,58 +288,28 @@ export default function AdminPage() {
     }
   };
 
-  if (!address && !emailAuthed) {
+  if (!address) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center">
-        <div className="grid gap-6 sm:grid-cols-2">
-          <Card>
-            <CardContent className="py-12 space-y-4">
-              <h2 className="text-xl font-semibold text-text-primary">
-                Connect the admin wallet
-              </h2>
-              <p className="text-text-secondary text-sm">
-                Required for on-chain operations (sponsor registration, case
-                assignment).
-              </p>
-              <Button
-                type="button"
-                className="w-full"
-                onClick={connect}
-                disabled={isConnecting}
-              >
-                {isConnecting ? "Connecting..." : "Connect wallet"}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="py-12 space-y-4">
-              <h2 className="text-xl font-semibold text-text-primary">
-                Or sign in with email
-              </h2>
-              <p className="text-text-secondary text-sm">
-                Read-only access — contract calls need the admin wallet.
-              </p>
-              <Input
-                type="email"
-                value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="admin@example.com"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleEmailLogin();
-                }}
-              />
-              <Button
-                type="button"
-                className="w-full"
-                onClick={handleEmailLogin}
-                disabled={!adminEmail.trim()}
-              >
-                Sign in as admin
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        <Card className="mx-auto max-w-sm">
+          <CardContent className="py-12 space-y-4">
+            <h2 className="text-xl font-semibold text-text-primary">
+              Connect the admin wallet
+            </h2>
+            <p className="text-text-secondary text-sm">
+              The admin wallet address is configured in <code className="font-mono">ADMIN_ADDRESS</code> env var.
+              Required for on-chain operations.
+            </p>
+            <Button
+              type="button"
+              className="w-full"
+              onClick={connect}
+              disabled={isConnecting}
+            >
+              {isConnecting ? "Connecting..." : "Connect wallet"}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -384,7 +323,7 @@ export default function AdminPage() {
     );
   }
 
-  if (!isAdmin && !emailAuthed) {
+  if (!isAdmin) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center">
         <Card>
@@ -433,29 +372,12 @@ export default function AdminPage() {
             <CheckCircle2 className="h-3 w-3" />
             Admin
           </Badge>
-          {emailAuthed && !isAdmin && (
-            <Badge variant="secondary" className="font-mono text-xs">
-              email: {adminEmail}
-            </Badge>
-          )}
           <Badge variant="secondary">jury_size={jurySize}</Badge>
           {slashPct != null && (
             <Badge variant="secondary">slash_pct={slashPct}%</Badge>
           )}
         </div>
       </div>
-
-      {!address && emailAuthed && (
-        <Card className="mb-6 border-warning">
-          <CardContent className="py-4 flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-warning shrink-0" />
-            <div className="text-sm text-text-secondary">
-              Read-only mode — connect the admin wallet to perform contract
-              operations (sponsor registration, case assignment).
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {txStatus !== "idle" && (
         <Card className="mb-6">
