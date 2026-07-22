@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useWallet } from "@/providers/wallet";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TransactionStatus } from "@/components/ui/transaction-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCoachMarks } from "@/hooks/use-coach-marks";
+import { CoachMark } from "@/components/ui/coach-mark";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Dialog,
   DialogContent,
@@ -29,9 +32,27 @@ import {
   UserPlus,
 } from "lucide-react";
 import { formatXLM, stroopsToXLM, formatAddress, timeAgo } from "@/lib/utils";
+<<<<<<< Updated upstream
 import { getPlatformClient, getEscrowClient, ESCROW_CONTRACT_ID } from "@/lib/contracts";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
 import { Networks } from "@stellar/stellar-sdk";
+=======
+import {
+  getJuryClient,
+  getEscrowClient,
+  getNetworkConfig,
+  voteFromApprove,
+  apiUrl,
+} from "@/lib/contracts";
+import {
+  fetchPendingApplications,
+  fetchMyVotes,
+  appId as resolveAppId,
+  type ApiApplication,
+} from "@/lib/api";
+import { buildSignSubmit, signAndSendSorobanTx, getExplorerUrl } from "@/lib/tx";
+import { stroopsToXLM as toXlm } from "@/lib/utils";
+>>>>>>> Stashed changes
 
 interface Application {
   id: number;
@@ -65,6 +86,38 @@ export default function JuryDashboard() {
   const [txError, setTxError] = useState<string | undefined>();
   const [voteConfirmOpen, setVoteConfirmOpen] = useState(false);
   const [pendingVote, setPendingVote] = useState<{ appId: number; approve: boolean } | null>(null);
+
+  const statsRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const voteRef = useRef<HTMLDivElement>(null);
+
+  const coach = useCoachMarks({
+    storageKey: "jury_dashboard",
+    steps: [
+      {
+        id: "stats",
+        targetRef: statsRef,
+        title: "Your Jury Stats",
+        description: "See pending reviews, approved applications, and your voting history.",
+        position: "bottom",
+      },
+      {
+        id: "tabs",
+        targetRef: tabsRef,
+        title: "Review Tabs",
+        description: "Switch between Pending Review, Approved, and your voting history.",
+        position: "top",
+      },
+      {
+        id: "vote",
+        targetRef: voteRef,
+        title: "Cast Your Vote",
+        description: "Review each application and cast an Approve or Reject vote on-chain.",
+        position: "left",
+      },
+    ],
+    autoStart: true,
+  });
 
   const safeJson = async (res: Response) => {
     if (!res.ok) return null;
@@ -159,6 +212,7 @@ export default function JuryDashboard() {
 
     try {
       setTxStatus("submitting");
+<<<<<<< Updated upstream
       const result = await buildSignSubmit(
         () => getPlatformClient(address).cast_vote({
           voter: address,
@@ -167,6 +221,16 @@ export default function JuryDashboard() {
           comment_hash: approve ? "approved" : "rejected",
         }),
         (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+=======
+      const result = await signAndSendSorobanTx(
+        await getJuryClient(address).vote({
+          case_id: caseId,
+          juror: address,
+          vote: voteFromApprove(approve),
+        }),
+        signTransaction,
+        address,
+>>>>>>> Stashed changes
       );
 
       setTxHash(result.hash);
@@ -298,11 +362,22 @@ export default function JuryDashboard() {
 
     try {
       setTxStatus("submitting");
+<<<<<<< Updated upstream
       const result = await buildSignSubmit(
         () => getPlatformClient(address).register_juror({
           juror: address,
         }),
         (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+=======
+      const result = await signAndSendSorobanTx(
+        await jury.register({
+          juror: address,
+          xlm_stake: minXlm,
+          platform_stake: minPlatform,
+        }),
+        signTransaction,
+        address,
+>>>>>>> Stashed changes
       );
 
       setTxHash(result.hash);
@@ -436,8 +511,50 @@ export default function JuryDashboard() {
         </Card>
       )}
 
+      <div ref={statsRef} className="grid gap-4 sm:grid-cols-3 mb-8">
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-md bg-warning/10 p-2">
+                <Clock className="h-5 w-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-sm text-text-secondary">Pending Review</p>
+                <p className="text-lg font-bold text-text-primary">{applications.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-md bg-success/10 p-2">
+                <CheckCircle2 className="h-5 w-5 text-success" />
+              </div>
+              <div>
+                <p className="text-sm text-text-secondary">Approved</p>
+                <p className="text-lg font-bold text-text-primary">{allApplications.filter(a => a.status === "Approved").length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-md bg-accent/10 p-2">
+                <Gavel className="h-5 w-5 text-accent" />
+              </div>
+              <div>
+                <p className="text-sm text-text-secondary">My Votes</p>
+                <p className="text-lg font-bold text-text-primary">{myVotes.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Tabs defaultValue="pending" className="space-y-6">
-        <TabsList>
+        <TabsList ref={tabsRef}>
           <TabsTrigger value="pending">
             Pending Review ({applications.length})
           </TabsTrigger>
@@ -456,17 +573,11 @@ export default function JuryDashboard() {
               <Skeleton className="h-40 w-full" />
             </div>
           ) : applications.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-text-primary mb-2">
-                  All Caught Up
-                </h3>
-                <p className="text-text-secondary">
-                  No applications pending review at this time.
-                </p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={<CheckCircle2 className="h-7 w-7 text-success" />}
+              title="All Caught Up"
+              description="No applications pending review at this time. New applications will appear here once submitted."
+            />
           ) : (
             applications.map((app) => {
               const displayed = displayApp(app);
@@ -522,7 +633,7 @@ export default function JuryDashboard() {
                       </div>
                     </div>
 
-                    <div className="flex gap-3 pt-2">
+                    <div ref={applications.length > 0 && applications[0].id === app.id ? voteRef : undefined} className="flex gap-3 pt-2">
                       {alreadyVoted ? (
                         <Badge variant="secondary" className="px-4 py-1.5">
                           Already Voted
@@ -568,11 +679,11 @@ export default function JuryDashboard() {
               <Skeleton className="h-40 w-full" />
             </div>
           ) : allApplications.filter(a => a.status === "Approved").length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-text-secondary">No approved applications yet.</p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={<CheckCircle2 className="h-7 w-7 text-text-muted" />}
+              title="No Approved Applications"
+              description="Applications approved by the jury will appear here. Vote on pending applications first."
+            />
           ) : (
             allApplications.filter(a => a.status === "Approved").map((app) => {
               const displayed = displayApp(app);
@@ -618,11 +729,11 @@ export default function JuryDashboard() {
 
         <TabsContent value="history" className="space-y-4">
           {myVotes.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-text-secondary">You haven&apos;t voted yet.</p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={<CheckCircle2 className="h-7 w-7 text-text-muted" />}
+              title="No Votes Yet"
+              description="You haven't cast any votes. Review pending applications and cast your first vote."
+            />
           ) : (
             myVotes.map((vote, i) => (
               <Card key={i}>
@@ -709,6 +820,20 @@ export default function JuryDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {coach.isActive && coach.currentStepData && (
+        <CoachMark
+          isOpen={coach.isActive}
+          onClose={coach.dismiss}
+          onNext={coach.next}
+          title={coach.currentStepData.title}
+          description={coach.currentStepData.description}
+          targetRef={coach.currentStepData.targetRef}
+          position={coach.currentStepData.position}
+          step={coach.currentStep ?? 0}
+          totalSteps={coach.totalSteps}
+        />
+      )}
     </div>
   );
 }

@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/providers/wallet";
+<<<<<<< Updated upstream
+=======
+import { Logo } from "@/components/logo";
+import { SPLASH_LEAVING_EVENT } from "@/components/landing/intro-splash";
+import { RolePicker } from "@/components/landing/role-picker";
+>>>>>>> Stashed changes
 
 const heroWords = [
   { text: "Fund", fade: false },
@@ -75,7 +81,7 @@ const stageData = [
 ];
 
 export default function CinematicLanding() {
-  const { connect, isConnecting } = useWallet();
+  const { connect, isConnecting, address } = useWallet();
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeStage, setActiveStage] = useState(0);
@@ -215,6 +221,10 @@ export default function CinematicLanding() {
           Scroll
         </div>
       </section>
+
+
+      {/* Role Picker - shows after hero animation for unauthenticated users */}
+      <RolePicker heroRevealed={heroRevealed} isAuthenticated={!!address} />
 
       {/* What it does */}
       <section id="work" className="relative px-6 md:px-12">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useWallet } from "@/providers/wallet";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -22,7 +22,13 @@ import { Coins, TrendingUp, ExternalLink, Wallet } from "lucide-react";
 import { formatXLM, stroopsToXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
 import { getEscrowClient, getPlatformClient } from "@/lib/contracts";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
+<<<<<<< Updated upstream
 import { Networks } from "@stellar/stellar-sdk";
+=======
+import { useCoachMarks } from "@/hooks/use-coach-marks";
+import { CoachMark } from "@/components/ui/coach-mark";
+import { EmptyState } from "@/components/ui/empty-state";
+>>>>>>> Stashed changes
 
 interface Campaign {
   id: number;
@@ -50,7 +56,43 @@ export default function InvestorDashboard() {
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
 
+<<<<<<< Updated upstream
   const fetchCampaigns = useCallback(async () => {
+=======
+  const statsRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const depositRef = useRef<HTMLButtonElement>(null);
+
+  const coach = useCoachMarks({
+    storageKey: "investor_dashboard",
+    steps: [
+      {
+        id: "stats",
+        targetRef: statsRef,
+        title: "Your Portfolio",
+        description: "See your total invested, active campaigns, and portfolio at a glance.",
+        position: "bottom",
+      },
+      {
+        id: "tabs",
+        targetRef: tabsRef,
+        title: "Browse & Portfolio",
+        description: "Browse all approved campaigns or switch to My Investments to track your deposits.",
+        position: "top",
+      },
+      {
+        id: "deposit",
+        targetRef: depositRef,
+        title: "Deposit Funds",
+        description: "Click Deposit to lock XLM into a Soroban escrow contract for a campaign.",
+        position: "left",
+      },
+    ],
+    autoStart: true,
+  });
+
+  const fetchCampaignsList = useCallback(async () => {
+>>>>>>> Stashed changes
     setLoading(true);
     try {
       const platformClient = getPlatformClient(address || undefined);
@@ -223,7 +265,7 @@ export default function InvestorDashboard() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3 mb-8">
+      <div ref={statsRef} className="grid gap-4 sm:grid-cols-3 mb-8">
         <Card>
           <CardContent className="py-4">
             <div className="flex items-center gap-3">
@@ -274,7 +316,7 @@ export default function InvestorDashboard() {
       )}
 
       <Tabs defaultValue="browse" className="space-y-6">
-        <TabsList>
+        <TabsList ref={tabsRef}>
           <TabsTrigger value="browse">Browse Campaigns ({campaigns.length})</TabsTrigger>
           <TabsTrigger value="portfolio">My Investments ({myInvestments.length})</TabsTrigger>
         </TabsList>
@@ -286,17 +328,11 @@ export default function InvestorDashboard() {
               <Skeleton className="h-48 w-full" />
             </div>
           ) : campaigns.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Coins className="h-12 w-12 text-text-muted mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-text-primary mb-2">
-                  No Campaigns Available
-                </h3>
-                <p className="text-text-secondary">
-                  Check back later for approved campaigns to invest in.
-                </p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={<Coins className="h-7 w-7 text-amber" />}
+              title="No Campaigns Available"
+              description="There are no jury-approved campaigns yet. Check back later or explore the platform overview."
+            />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               {campaigns.map((campaign) => {
@@ -351,6 +387,7 @@ export default function InvestorDashboard() {
 
                       <div className="flex gap-2">
                         <Button
+                          ref={campaigns.length > 0 && campaigns[0].id === campaign.id ? depositRef : undefined}
                           className="flex-1"
                           onClick={() => {
                             setSelectedCampaign(campaign);
@@ -380,11 +417,11 @@ export default function InvestorDashboard() {
 
         <TabsContent value="portfolio" className="space-y-4">
           {myInvestments.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-text-secondary">You haven&apos;t invested in any campaigns yet.</p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={<Wallet className="h-7 w-7 text-text-muted" />}
+              title="No Investments Yet"
+              description="Browse campaigns above and make your first deposit into an escrow contract."
+            />
           ) : (
             <div className="space-y-3">
               {myInvestments.map((campaign) => (
@@ -471,6 +508,20 @@ export default function InvestorDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {coach.isActive && coach.currentStepData && (
+        <CoachMark
+          isOpen={coach.isActive}
+          onClose={coach.dismiss}
+          onNext={coach.next}
+          title={coach.currentStepData.title}
+          description={coach.currentStepData.description}
+          targetRef={coach.currentStepData.targetRef}
+          position={coach.currentStepData.position}
+          step={coach.currentStep ?? 0}
+          totalSteps={coach.totalSteps}
+        />
+      )}
     </div>
   );
 }

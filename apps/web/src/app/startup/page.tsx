@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useWallet } from "@/providers/wallet";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -15,6 +15,9 @@ import { getPlatformClient, getEscrowClient } from "@/lib/contracts";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
 import { Networks } from "@stellar/stellar-sdk";
 import Link from "next/link";
+import { useCoachMarks } from "@/hooks/use-coach-marks";
+import { CoachMark } from "@/components/ui/coach-mark";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface Application {
   id: number;
@@ -41,6 +44,38 @@ export default function StartupDashboard() {
   const [txStatus, setTxStatus] = useState<"idle" | "signing" | "submitting" | "confirming" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
+
+  const statsRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const releaseRef = useRef<HTMLButtonElement>(null);
+
+  const coach = useCoachMarks({
+    storageKey: "startup_dashboard",
+    steps: [
+      {
+        id: "stats",
+        targetRef: statsRef,
+        title: "Your Stats",
+        description: "Track your applications, total ask, and jury votes at a glance.",
+        position: "bottom",
+      },
+      {
+        id: "tabs",
+        targetRef: tabsRef,
+        title: "Application Tabs",
+        description: "Switch between Application details, Jury Feedback, and Campaign milestones.",
+        position: "top",
+      },
+      {
+        id: "release",
+        targetRef: releaseRef,
+        title: "Release Milestones",
+        description: "Once jury-approved, click here to release escrow funds for completed milestones.",
+        position: "left",
+      },
+    ],
+    autoStart: true,
+  });
 
   const fetchApplications = useCallback(async () => {
     if (!address) return;
@@ -222,29 +257,127 @@ export default function StartupDashboard() {
         </Card>
       )}
 
+<<<<<<< Updated upstream
+=======
+      {/* Founder Profile Header */}
+      <Card className="mb-8">
+        <CardContent className="py-8">
+          <div className="flex flex-col sm:flex-row items-start gap-6">
+            <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-mint/20 to-accent/20 flex items-center justify-center shrink-0 border border-white/10">
+              <User className="h-10 w-10 text-mint" />
+            </div>
+            <div className="flex-1 min-w-0">
+              {editingName ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Your name"
+                    className="max-w-xs"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); if (e.key === "Escape") setEditingName(false); }}
+                    autoFocus
+                  />
+                  <Button size="sm" onClick={handleSaveName}>Save</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setEditingName(false)}>Cancel</Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold text-text-primary">
+                    {user?.displayName || "Founder"}
+                  </h1>
+                  <button
+                    onClick={() => { setEditName(user?.displayName || ""); setEditingName(true); }}
+                    className="text-text-muted hover:text-text-primary transition-colors"
+                    title="Edit name"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                  </button>
+                </div>
+              )}
+              {user?.bio && (
+                <p className="text-text-secondary mt-1">{user.bio}</p>
+              )}
+              <div className="flex flex-wrap items-center gap-3 mt-3">
+                <div className="flex items-center gap-1.5 text-sm text-text-muted">
+                  <Wallet className="h-4 w-4" />
+                  <span className="font-mono">{formatAddress(address)}</span>
+                </div>
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <Building2 className="h-3 w-3" />
+                  Founder
+                </Badge>
+                {applications[0] && (
+                  <Badge variant="secondary" className="flex items-center gap-1">
+                    <FileText className="h-3 w-3" />
+                    Application #{applications[0].id}
+                  </Badge>
+                )}
+              </div>
+            </div>
+            {applications.length === 0 && (
+              <Link href="/startup/apply">
+                <Button>Apply for Funding</Button>
+              </Link>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Stats Cards */}
+      <div ref={statsRef} className="grid gap-4 sm:grid-cols-3 mb-8">
+        <Card>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-mint/10 p-2">
+              <FileText className="h-5 w-5 text-mint" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Applications</p>
+              <p className="text-lg font-bold text-text-primary">{applications.length}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-accent/10 p-2">
+              <Coins className="h-5 w-5 text-accent" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Total Ask</p>
+              <p className="text-lg font-bold text-text-primary">
+                {applications.length > 0 ? `${formatXLM(applications[0].askAmount)} XLM` : "—"}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-warning/10 p-2">
+              <Users2 className="h-5 w-5 text-warning" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Votes Cast</p>
+              <p className="text-lg font-bold text-text-primary">{votes.length}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+>>>>>>> Stashed changes
       {loading ? (
         <div className="space-y-4">
           <Skeleton className="h-48 w-full" />
           <Skeleton className="h-32 w-full" />
         </div>
       ) : applications.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <FileText className="h-12 w-12 text-text-muted mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-text-primary mb-2">
-              No Application Yet
-            </h3>
-            <p className="text-text-secondary mb-6">
-              Submit your first funding application to get started.
-            </p>
-            <Link href="/startup/apply">
-              <Button>Apply for Funding</Button>
-            </Link>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={<FileText className="h-7 w-7 text-mint" />}
+          title="No Application Yet"
+          description="Submit your first funding application to get started. Jury will review it blind."
+          actions={[{ label: "Apply for Funding", href: "/startup/apply" }]}
+        />
       ) : (
         <Tabs defaultValue="application" className="space-y-6">
-          <TabsList>
+          <TabsList ref={tabsRef}>
             <TabsTrigger value="application">Application</TabsTrigger>
             <TabsTrigger value="votes">Jury Feedback ({votes.length})</TabsTrigger>
             {applications[0]?.status === "Approved" && (
@@ -293,11 +426,11 @@ export default function StartupDashboard() {
 
           <TabsContent value="votes" className="space-y-4">
             {votes.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center">
-                  <p className="text-text-secondary">No votes cast yet.</p>
-                </CardContent>
-              </Card>
+              <EmptyState
+                icon={<CheckCircle2 className="h-7 w-7 text-text-muted" />}
+                title="No Votes Cast Yet"
+                description="Jury members haven't voted on your application yet. Check back once they've reviewed it."
+              />
             ) : (
               votes.map((vote, i) => (
                 <Card key={i}>
@@ -367,6 +500,7 @@ export default function StartupDashboard() {
                       </div>
                       {!ms.released && (
                         <Button
+                          ref={i === 0 ? releaseRef : undefined}
                           variant="outline"
                           size="sm"
                           onClick={() => handleReleaseMilestone(i)}
@@ -383,6 +517,20 @@ export default function StartupDashboard() {
             </TabsContent>
           )}
         </Tabs>
+      )}
+
+      {coach.isActive && coach.currentStepData && (
+        <CoachMark
+          isOpen={coach.isActive}
+          onClose={coach.dismiss}
+          onNext={coach.next}
+          title={coach.currentStepData.title}
+          description={coach.currentStepData.description}
+          targetRef={coach.currentStepData.targetRef}
+          position={coach.currentStepData.position}
+          step={coach.currentStep ?? 0}
+          totalSteps={coach.totalSteps}
+        />
       )}
     </div>
   );

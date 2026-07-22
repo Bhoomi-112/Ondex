@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import { TransactionBuilder, Networks, Horizon, rpc, Account } from "@stellar/stellar-sdk";
 
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
@@ -6,6 +7,16 @@ const FRIENDBOT_URL = "https://friendbot.stellar.org";
 
 export const horizonServer = new Horizon.Server(HORIZON_URL);
 export const rpcServer = new rpc.Server(RPC_URL);
+=======
+import {
+  TransactionBuilder,
+  Horizon,
+  rpc,
+  Transaction,
+} from "@stellar/stellar-sdk";
+import type { AssembledTransaction } from "@stellar/stellar-sdk/contract";
+import { getNetworkConfig, explorerTxUrl, explorerContractUrl } from "./contracts";
+>>>>>>> Stashed changes
 
 interface TxResult {
   hash: string;
@@ -122,3 +133,56 @@ export async function buildSignSubmit(
   }
   throw lastError;
 }
+<<<<<<< Updated upstream
+=======
+
+/**
+ * Sign and send a Soroban transaction that requires auth (e.g. `requireAuth()`).
+ * Unlike `buildSignSubmit`, this properly handles Soroban auth entry signing
+ * by using `AssembledTransaction.signAndSend()` with Freighter as the wallet.
+ */
+export async function signAndSendSorobanTx<A>(
+  assembled: AssembledTransaction<A>,
+  signTx: (
+    xdr: string,
+    opts?: { networkPassphrase?: string; address?: string },
+  ) => Promise<{ signedTxXdr: string }>,
+  address: string,
+  maxRetries = 2,
+): Promise<TxResult> {
+  const { networkPassphrase } = getNetworkConfig();
+
+  const signer = async (
+    tx: Transaction,
+    opts?: { networkPassphrase?: string; address?: string },
+  ) => {
+    const xdr = tx.toXDR();
+    const result = await signTx(xdr, {
+      networkPassphrase: opts?.networkPassphrase ?? networkPassphrase,
+      address: opts?.address ?? address,
+    });
+    return result.signedTxXdr;
+  };
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    try {
+      const sent = await (assembled.signAndSend as any)({ signTransaction: signer });
+      const hash = typeof sent.hash === "string" ? sent.hash : sent.hash.toString();
+      return { hash, ledger: sent.ledger ?? 0, successful: true };
+    } catch (err: unknown) {
+      lastError = err;
+      if (!isBadSeqError(err)) throw err;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError));
+}
+
+// Avoid unused import if Horizon only used in helper
+void horizonServer;
+>>>>>>> Stashed changes

@@ -1,4 +1,13 @@
+<<<<<<< Updated upstream
 import "dotenv/config";
+=======
+import "./env.js";
+
+(BigInt.prototype as any).toJSON = function () {
+  return String(this);
+};
+
+>>>>>>> Stashed changes
 import { config, requiredConfig } from "./config.js";
 import { createLogger } from "./lib/logger.js";
 import { prisma, checkDatabaseConnection } from "./lib/db.js";

@@ -61,6 +61,7 @@ pub enum DataKey {
 #[contract]
 pub struct JuryRegistry;
 
+<<<<<<< Updated upstream
 #[contractimpl]
 impl JuryRegistry {
     pub fn initialize(env: Env, admin: Address, dispute_window_secs: u64) {
@@ -73,6 +74,204 @@ impl JuryRegistry {
         env.storage()
             .persistent()
             .set(&DataKey::Registered(admin.clone()), &true);
+=======
+// TODO(security-audit): External third-party security audit required before
+// mainnet deployment / handling real funds. See docs/THREAT_MODEL.md.
+
+fn require_init(env: &Env) {
+    if !env
+        .storage()
+        .instance()
+        .get::<_, bool>(&DataKey::Initialized)
+        .unwrap_or(false)
+    {
+        panic!("not initialized");
+    }
+}
+
+fn require_admin(env: &Env) {
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .expect("admin not set");
+    admin.require_auth();
+}
+
+fn reentrancy_enter(env: &Env) {
+    let locked: bool = env
+        .storage()
+        .instance()
+        .get(&DataKey::ReentrancyLock)
+        .unwrap_or(false);
+    if locked {
+        panic!("reentrancy");
+    }
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyLock, &true);
+}
+
+fn reentrancy_exit(env: &Env) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyLock, &false);
+}
+
+fn get_u32(env: &Env, key: DataKey) -> u32 {
+    env.storage()
+        .instance()
+        .get(&key)
+        .expect("config not set")
+}
+
+fn get_i128(env: &Env, key: DataKey) -> i128 {
+    env.storage()
+        .instance()
+        .get(&key)
+        .expect("config not set")
+}
+
+fn get_addr(env: &Env, key: DataKey) -> Address {
+    env.storage()
+        .instance()
+        .get(&key)
+        .expect("config not set")
+}
+
+fn ensure_not_registered(env: &Env, juror: &Address) {
+    if env
+        .storage()
+        .persistent()
+        .get::<_, bool>(&DataKey::Registered(juror.clone()))
+        .unwrap_or(false)
+    {
+        panic!("already registered");
+    }
+}
+
+fn store_registration(env: &Env, juror: Address, xlm_stake: i128, platform_stake: i128) {
+    env.storage().persistent().set(
+        &DataKey::JurorStakes(juror.clone()),
+        &JurorStakes {
+            xlm: xlm_stake,
+            platform: platform_stake,
+            registered_at: env.ledger().timestamp(),
+        },
+    );
+    env.storage()
+        .persistent()
+        .set(&DataKey::Registered(juror.clone()), &true);
+
+    env.events().publish(
+        (symbol_short!("REG"),),
+        (juror, xlm_stake, platform_stake),
+    );
+}
+
+fn self_register(env: &Env, juror: Address, xlm_stake: i128, platform_stake: i128) {
+    reentrancy_enter(env);
+    ensure_not_registered(env, &juror);
+
+    let min_xlm = get_i128(env, DataKey::MinXlmStake);
+    let min_platform = get_i128(env, DataKey::MinPlatformStake);
+    if xlm_stake < min_xlm || platform_stake < min_platform {
+        panic!("stake below minimum");
+    }
+
+    let contract = env.current_contract_address();
+    let xlm_token = get_addr(env, DataKey::XlmToken);
+
+    token::Client::new(env, &xlm_token).transfer(&juror, &contract, &xlm_stake);
+    if platform_stake > 0 {
+        let platform_token = get_addr(env, DataKey::PlatformToken);
+        token::Client::new(env, &platform_token).transfer(&juror, &contract, &platform_stake);
+    }
+
+    store_registration(env, juror, xlm_stake, platform_stake);
+    reentrancy_exit(env);
+}
+
+fn sponsored_register(
+    env: &Env,
+    sponsor: &Address,
+    juror: Address,
+    xlm_stake: i128,
+    platform_stake: i128,
+) {
+    reentrancy_enter(env);
+    ensure_not_registered(env, &juror);
+
+    let min_xlm = get_i128(env, DataKey::MinXlmStake);
+    let min_platform = get_i128(env, DataKey::MinPlatformStake);
+    if xlm_stake < min_xlm || platform_stake < min_platform {
+        panic!("stake below minimum");
+    }
+
+    let contract = env.current_contract_address();
+    let xlm_token = get_addr(env, DataKey::XlmToken);
+
+    token::Client::new(env, &xlm_token).transfer(sponsor, &contract, &xlm_stake);
+    if platform_stake > 0 {
+        let platform_token = get_addr(env, DataKey::PlatformToken);
+        token::Client::new(env, &platform_token).transfer(sponsor, &contract, &platform_stake);
+    }
+
+    store_registration(env, juror, xlm_stake, platform_stake);
+    reentrancy_exit(env);
+}
+
+#[contractimpl]
+impl JuryRegistry {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        xlm_token: Address,
+        platform_token: Address,
+        treasury: Address,
+        min_xlm_stake: i128,
+        min_platform_stake: i128,
+        jury_size: u32,
+        quorum: u32,
+        slash_pct: u32,
+    ) {
+        if env
+            .storage()
+            .instance()
+            .get::<_, bool>(&DataKey::Initialized)
+            .unwrap_or(false)
+        {
+            panic!("already initialized");
+        }
+        if min_xlm_stake <= 0 || min_platform_stake < 0 {
+            panic!("min stakes must be positive");
+        }
+        if jury_size == 0 {
+            panic!("jury_size must be > 0");
+        }
+        if quorum == 0 || quorum > jury_size {
+            panic!("quorum must be 1..=jury_size");
+        }
+        if slash_pct > 100 {
+            panic!("slash_pct must be 0..=100");
+        }
+
+        // Admin is stored as config; deployer signs the init tx (admin key not required at deploy).
+
+        let instance = env.storage().instance();
+        instance.set(&DataKey::Admin, &admin);
+        instance.set(&DataKey::XlmToken, &xlm_token);
+        instance.set(&DataKey::PlatformToken, &platform_token);
+        instance.set(&DataKey::Treasury, &treasury);
+        instance.set(&DataKey::MinXlmStake, &min_xlm_stake);
+        instance.set(&DataKey::MinPlatformStake, &min_platform_stake);
+        instance.set(&DataKey::JurySize, &jury_size);
+        instance.set(&DataKey::Quorum, &quorum);
+        instance.set(&DataKey::SlashPct, &slash_pct);
+        instance.set(&DataKey::Initialized, &true);
+        env.storage().persistent().set(&DataKey::NumCases, &0u32);
+
+>>>>>>> Stashed changes
         env.events().publish(
             (symbol_short!("INIT"),),
             (admin, dispute_window_secs),
@@ -80,9 +279,40 @@ impl JuryRegistry {
     }
 
     pub fn set_identity_registry(env: Env, identity_registry: Address) {
+<<<<<<< Updated upstream
         env.storage().persistent().set(
             &DataKey::IdentityRegistry,
             &identity_registry,
+=======
+        require_init(&env);
+        // First link may be done by deployer; later changes require admin.
+        let already = env.storage().instance().has(&DataKey::IdentityRegistry);
+        if already {
+            require_admin(&env);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::IdentityRegistry, &identity_registry);
+        env.events()
+            .publish((symbol_short!("SET_ID"),), (identity_registry,));
+    }
+
+    pub fn set_min_stakes(env: Env, min_xlm_stake: i128, min_platform_stake: i128) {
+        require_init(&env);
+        require_admin(&env);
+        if min_xlm_stake <= 0 || min_platform_stake < 0 {
+            panic!("min stakes must be positive");
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::MinXlmStake, &min_xlm_stake);
+        env.storage()
+            .instance()
+            .set(&DataKey::MinPlatformStake, &min_platform_stake);
+        env.events().publish(
+            (symbol_short!("SET_MIN"),),
+            (min_xlm_stake, min_platform_stake),
+>>>>>>> Stashed changes
         );
     }
 
