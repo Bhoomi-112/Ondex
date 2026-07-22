@@ -18,7 +18,7 @@ router.get(
   validate(listQuerySchema, "query"),
   async (req, res) => {
     const wallet = res.locals.wallet as string;
-    const q = req.query as unknown as z.infer<typeof listQuerySchema>;
+    const q = ((req as unknown as Record<string, unknown>).validatedQuery ?? req.query) as z.infer<typeof listQuerySchema>;
 
     const { items, total, unreadCount } =
       await notificationService.getNotifications(wallet, q.unreadOnly, q.limit, q.offset);
@@ -35,7 +35,9 @@ router.put("/read-all", requireAuth, async (_req, res) => {
 
 router.put("/:id/read", requireAuth, async (req, res) => {
   const id = req.params.id as string;
-  await notificationService.markRead(id);
+  const wallet = res.locals.wallet as string;
+  // IDOR: only mark notifications owned by the session wallet
+  await notificationService.markReadForWallet(id, wallet);
   res.json({ ok: true });
 });
 

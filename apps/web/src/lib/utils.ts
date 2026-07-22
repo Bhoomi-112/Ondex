@@ -20,12 +20,20 @@ export function formatAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-export function stellarExpertTxUrl(hash: string, network: "testnet" | "public" = "testnet"): string {
-  return `https://stellar.expert/explorer/${network}/tx/${hash}`;
+export function stellarExpertTxUrl(hash: string): string {
+  const base = process.env.NEXT_PUBLIC_EXPLORER_BASE_URL;
+  if (!base) {
+    throw new Error("NEXT_PUBLIC_EXPLORER_BASE_URL is not set");
+  }
+  return `${base.replace(/\/$/, "")}/tx/${hash}`;
 }
 
-export function stellarExpertContractUrl(contractId: string, network: "testnet" | "public" = "testnet"): string {
-  return `https://stellar.expert/explorer/${network}/contract/${contractId}`;
+export function stellarExpertContractUrl(contractId: string): string {
+  const base = process.env.NEXT_PUBLIC_EXPLORER_BASE_URL;
+  if (!base) {
+    throw new Error("NEXT_PUBLIC_EXPLORER_BASE_URL is not set");
+  }
+  return `${base.replace(/\/$/, "")}/contract/${contractId}`;
 }
 
 export function timeAgo(timestamp: number): string {

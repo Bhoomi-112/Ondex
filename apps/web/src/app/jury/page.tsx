@@ -29,9 +29,21 @@ import {
   UserPlus,
 } from "lucide-react";
 import { formatXLM, stroopsToXLM, formatAddress, timeAgo } from "@/lib/utils";
-import { getPlatformClient, getEscrowClient, ESCROW_CONTRACT_ID } from "@/lib/contracts";
+import {
+  getJuryClient,
+  getEscrowClient,
+  getNetworkConfig,
+  voteFromApprove,
+  apiUrl,
+} from "@/lib/contracts";
+import {
+  fetchPendingApplications,
+  fetchMyVotes,
+  appId as resolveAppId,
+  type ApiApplication,
+} from "@/lib/api";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
-import { Networks } from "@stellar/stellar-sdk";
+import { stroopsToXLM as toXlm } from "@/lib/utils";
 
 interface Application {
   id: number;
@@ -72,76 +84,79 @@ export default function JuryDashboard() {
     try { return JSON.parse(text); } catch { return null; }
   };
 
+  const mapApp = (app: ApiApplication): Application => {
+    const statusMap: Record<string, Application["status"]> = {
+      Submitted: "Submitted",
+      UnderReview: "UnderReview",
+      Approved: "Approved",
+      Rejected: "Rejected",
+    };
+    const statusTag = app.status || "Submitted";
+    const ask = app.askAmount ?? app.ask_amount ?? 0;
+    const askNum = typeof ask === "bigint" ? toXlm(ask) : Number(ask) > 1e6 ? toXlm(Number(ask)) : Number(ask);
+
+    return {
+      id: resolveAppId(app),
+      name: app.name || "Anonymous",
+      pitch: app.pitch || "",
+      askAmount: askNum,
+      status: statusMap[statusTag] || "Submitted",
+      maskName: app.maskName ?? app.mask_name ?? true,
+      maskAddress: app.maskAddress ?? app.mask_address ?? true,
+      startup: app.startup || app.startupAddress || app.startup_address || "",
+      milestones:
+        app.milestones?.map((m, i) => {
+          const amt = m.amount ?? 0;
+          const n = typeof amt === "bigint" ? toXlm(amt) : Number(amt) > 1e6 ? toXlm(Number(amt)) : Number(amt);
+          return {
+            description: m.description || `Milestone ${i + 1}`,
+            amount: n,
+          };
+        }) || [],
+    };
+  };
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const client = getPlatformClient(address || undefined);
-
       if (address) {
         try {
-          const jurorResult = await client.is_juror({ juror: address });
-          setIsJuror(jurorResult.result);
+          const client = getJuryClient(address);
+          const jurorResult = await client.is_reg({ juror: address });
+          setIsJuror(!!jurorResult.result);
         } catch {
           setIsJuror(false);
         }
       }
 
-      const appsResult = await client.list_applications({ offset: BigInt(0), limit: BigInt(100) });
-      const rawApps = appsResult.result;
+      const [pending, allRes] = await Promise.all([
+        fetchPendingApplications(),
+        fetch(apiUrl("/api/applications/all"))
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null) as Promise<{ applications?: ApiApplication[] } | null>,
+      ]);
 
-      const mapped: Application[] = rawApps.map((app: any) => {
-        const statusMap: Record<string, Application["status"]> = {
-          Submitted: "Submitted",
-          UnderReview: "UnderReview",
-          Approved: "Approved",
-          Rejected: "Rejected",
-        };
-        const statusTag = app.status?.tag || "Submitted";
-
-        const milestones = app.milestones?.map((m: any, i: number) => ({
-          description: m.description || `Milestone ${i + 1}`,
-          amount: stroopsToXLM(m.amount),
-        })) || [];
-
-        return {
-          id: Number(app.id),
-          name: app.name || "Anonymous",
-          pitch: app.pitch || "",
-          askAmount: stroopsToXLM(app.ask_amount),
-          status: statusMap[statusTag] || "Submitted",
-          maskName: app.mask_name ?? true,
-          maskAddress: app.mask_address ?? true,
-          startup: app.startup || "",
-          milestones,
-        };
-      });
-
+      const allRaw = allRes?.applications?.length ? allRes.applications : pending;
+      const mapped = allRaw.map(mapApp);
       setAllApplications(mapped);
-      setApplications(mapped.filter(a => a.status === "Submitted" || a.status === "UnderReview"));
+      setApplications(
+        mapped.filter((a) => a.status === "Submitted" || a.status === "UnderReview"),
+      );
 
-      const votesForMe: VoteRecord[] = [];
       if (address) {
-        for (const app of mapped) {
-          try {
-            const votesResult = await client.get_votes({ app_id: BigInt(app.id) });
-            const votes = votesResult.result || [];
-            for (const v of votes) {
-              if (v.voter === address) {
-                votesForMe.push({
-                  appId: app.id,
-                  approve: v.approve,
-                  timestamp: Number(v.timestamp),
-                });
-              }
-            }
-          } catch {
-            // vote fetch may fail for some apps
-          }
-        }
+        const votes = await fetchMyVotes(address);
+        setMyVotes(
+          votes.map((v) => ({
+            appId: Number(v.appId ?? v.app_id ?? v.caseId ?? v.case_id ?? 0),
+            approve: !!v.approve,
+            timestamp: Number(v.timestamp || Date.now() / 1000),
+          })),
+        );
+      } else {
+        setMyVotes([]);
       }
-      setMyVotes(votesForMe);
     } catch (err) {
-      console.error("Failed to fetch applications from chain:", err);
+      console.error("Failed to fetch jury data:", err);
     } finally {
       setLoading(false);
     }
@@ -151,7 +166,7 @@ export default function JuryDashboard() {
     fetchData();
   }, [fetchData]);
 
-  const handleVote = async (appId: number, approve: boolean) => {
+  const handleVote = async (caseId: number, approve: boolean) => {
     if (!address) return;
 
     setTxStatus("signing");
@@ -160,17 +175,31 @@ export default function JuryDashboard() {
     try {
       setTxStatus("submitting");
       const result = await buildSignSubmit(
-        () => getPlatformClient(address).cast_vote({
-          voter: address,
-          app_id: BigInt(appId),
-          approve,
-          comment_hash: approve ? "approved" : "rejected",
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        () =>
+          getJuryClient(address).vote({
+            case_id: caseId,
+            juror: address,
+            vote: voteFromApprove(approve),
+          }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
       setTxStatus("success");
+
+      // Indexer may lag — also record vote off-chain for UI
+      await fetch(apiUrl(`/api/applications/${caseId}/votes`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voter: address,
+          approve,
+          commentHash: result.hash,
+        }),
+      }).catch(() => null);
 
       addToast({
         title: "Vote Recorded",
@@ -185,9 +214,10 @@ export default function JuryDashboard() {
       setTxStatus("error");
       const msg = err?.message || String(err);
       const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : msg || "Failed to cast vote"
+      setTxError(
+        isAccountMissing
+          ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+          : msg || "Failed to cast vote",
       );
       addToast({
         title: "Vote Failed",
@@ -199,65 +229,38 @@ export default function JuryDashboard() {
     }
   };
 
-  const handleApproveApplication = async (appId: number) => {
-    if (!address) return;
-
-    setTxStatus("signing");
-    setTxError(undefined);
-
-    try {
-      setTxStatus("submitting");
-      const result = await buildSignSubmit(
-        () => getPlatformClient(address).approve_application({
-          app_id: BigInt(appId),
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
-      );
-
-      setTxHash(result.hash);
-      setTxStatus("success");
-
-      addToast({
-        title: "Application Approved",
-        description: `Application #${appId} has been approved on-chain.`,
-        variant: "success",
-        txHash: result.hash,
-        txUrl: getExplorerUrl(result.hash),
-      });
-
-      fetchData();
-    } catch (err: any) {
-      setTxStatus("error");
-      const msg = err?.message || String(err);
-      const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : msg || "Failed to approve application"
-      );
-      addToast({
-        title: "Approval Failed",
-        description: isAccountMissing
-          ? "Account not found on testnet. Fund your wallet first."
-          : msg || "Transaction was rejected",
-        variant: "error",
-      });
-    }
-  };
-
   const handleCreateCampaign = async (app: Application) => {
     if (!address) return;
 
+    const windowSecs = process.env.NEXT_PUBLIC_DEFAULT_DISPUTE_WINDOW_SECS;
+    const asset = process.env.NEXT_PUBLIC_XLM_TOKEN_CONTRACT_ID;
+    if (!windowSecs || !asset) {
+      addToast({
+        title: "Config missing",
+        description:
+          "Set NEXT_PUBLIC_DEFAULT_DISPUTE_WINDOW_SECS and NEXT_PUBLIC_XLM_TOKEN_CONTRACT_ID.",
+        variant: "error",
+      });
+      return;
+    }
+
     setTxStatus("signing");
     setTxError(undefined);
 
     try {
       setTxStatus("submitting");
       const result = await buildSignSubmit(
-        () => getPlatformClient(address).create_campaign({
-          app_id: BigInt(app.id),
-          escrow_addr: ESCROW_CONTRACT_ID,
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        () =>
+          getEscrowClient(address).open_campaign({
+            campaign_id: app.id,
+            startup: app.startup || address,
+            asset,
+            dispute_window_secs: BigInt(windowSecs),
+          }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
@@ -276,9 +279,10 @@ export default function JuryDashboard() {
       setTxStatus("error");
       const msg = err?.message || String(err);
       const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : msg || "Failed to create campaign"
+      setTxError(
+        isAccountMissing
+          ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+          : msg || "Failed to create campaign",
       );
       addToast({
         title: "Campaign Creation Failed",
@@ -297,12 +301,22 @@ export default function JuryDashboard() {
     setTxError(undefined);
 
     try {
+      const jury = getJuryClient(address);
+      const mins = await jury.get_min_stakes();
+      const [minXlm, minPlatform] = mins.result as readonly [bigint, bigint];
+
       setTxStatus("submitting");
       const result = await buildSignSubmit(
-        () => getPlatformClient(address).register_juror({
-          juror: address,
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        () =>
+          jury.register({
+            juror: address,
+            xlm_stake: minXlm,
+            platform_stake: minPlatform,
+          }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
@@ -310,7 +324,7 @@ export default function JuryDashboard() {
 
       addToast({
         title: "Juror Registered",
-        description: "Your address has been registered as a juror on-chain.",
+        description: "Stake transferred and address registered on-chain.",
         variant: "success",
         txHash: result.hash,
         txUrl: getExplorerUrl(result.hash),
@@ -321,20 +335,16 @@ export default function JuryDashboard() {
       setTxStatus("error");
       const msg = err?.message || String(err);
       const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      const isAuth = msg.includes("Unauthorized") || msg.includes("admin") || msg.includes("not authorized") || msg.includes("require_auth") || msg.includes("sceAuth") || msg.includes("invokeHostFunctionTrapped") || msg.includes("HostError");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : isAuth
-          ? "Only the contract admin can register jurors. Contact the platform admin or use the CLI: `pnpm tsx scripts/register-juror.ts <your_address>`"
-          : msg || "Failed to register as juror"
+      setTxError(
+        isAccountMissing
+          ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+          : msg || "Failed to register as juror",
       );
       addToast({
         title: "Registration Failed",
         description: isAccountMissing
           ? "Account not found on testnet. Fund your wallet first."
-          : isAuth
-            ? "Only the contract admin can register jurors."
-            : msg || "Transaction was rejected",
+          : msg || "Transaction was rejected",
         variant: "error",
       });
     }
@@ -397,9 +407,9 @@ export default function JuryDashboard() {
                 {txStatus !== "idle" ? "Processing..." : "Register as Juror (Admin)"}
               </Button>
               <p className="text-xs text-text-muted max-w-sm">
-                This calls <code className="text-mint">register_juror</code> on the platform contract.
-                Only the contract admin address can successfully execute this.
-                If you&apos;re not the admin, ask them to register your address.
+                This stakes the on-chain minimum (XLM + platform token) via{" "}
+                <code className="text-mint">register</code> on jury_registry.
+                Ensure you hold enough balance for both assets.
               </p>
             </div>
           </CardContent>

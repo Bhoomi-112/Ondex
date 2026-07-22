@@ -1,28 +1,62 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useWallet } from "@/providers/wallet";
+import { useAuth } from "@/providers/auth";
+import type { UserRole } from "@/lib/auth-types";
 import { cn, formatAddress } from "@/lib/utils";
 import { fundTestnetAccount } from "@/lib/tx";
 import { useToast } from "@/components/ui/toast";
+import { Logo } from "@/components/logo";
+import { INTRO_REPLAY_EVENT } from "@/components/landing/intro-splash";
 import { LogOut, Menu, X, Droplets, Loader2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
-const navLinks = [
+const ROLE_NAV: Record<UserRole, Array<{ href: string; label: string }>> = {
+  founder: [
+    { href: "/startup", label: "Dashboard" },
+    { href: "/startup/apply", label: "Apply" },
+  ],
+  investor: [
+    { href: "/investor", label: "Dashboard" },
+  ],
+  jury: [
+    { href: "/jury", label: "Dashboard" },
+  ],
+};
+
+const GUEST_LINKS = [
   { href: "/for/startups", label: "Startup" },
   { href: "/for/jury", label: "Jury" },
   { href: "/for/investors", label: "Investor" },
 ];
 
 export function Navbar() {
-  const { address, walletName, connect, disconnect, isConnecting } = useWallet();
+  const { address, walletName } = useWallet();
+  const { user, logout } = useAuth();
   const { addToast } = useToast();
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [funding, setFunding] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const isHome = pathname === "/";
+
+  const navLinks = useMemo(() => {
+    if (!user?.role) return GUEST_LINKS;
+    return ROLE_NAV[user?.role] ?? GUEST_LINKS;
+  }, [user?.role]);
+
+  const handleHomeLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    window.dispatchEvent(new Event(INTRO_REPLAY_EVENT));
+    if (pathname === "/") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      router.push("/");
+    }
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -77,13 +111,13 @@ export function Navbar() {
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 md:px-12">
         <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-mint text-lg font-bold text-background">
-              O
-            </div>
-            <span className="text-lg font-semibold text-text-primary">
-              ond<span className="text-mint">ex</span>
-            </span>
+          <Link
+            href="/"
+            onClick={handleHomeLogoClick}
+            className="flex items-center gap-2"
+            aria-label="Ondex home"
+          >
+            <Logo priority />
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
@@ -128,21 +162,17 @@ export function Navbar() {
                 </span>
               </div>
               <button
-                onClick={disconnect}
+                onClick={() => logout()}
                 className="rounded-md p-2 text-text-secondary hover:text-text-primary hover:bg-white/5 transition-colors"
-                title="Disconnect"
+                title="Log out"
               >
                 <LogOut className="h-4 w-4" />
               </button>
             </>
           ) : (
-            <button
-              onClick={connect}
-              disabled={isConnecting}
-              className="btn-cta-primary"
-            >
-              {isConnecting ? "Connecting..." : "Connect Wallet"}
-            </button>
+            <Link href="/login" className="btn-cta-primary">
+              Log in
+            </Link>
           )}
 
           <button
@@ -188,8 +218,8 @@ export function Navbar() {
                 </button>
                 <div className="flex items-center gap-2 text-text-secondary">
                   <span className="font-mono">{formatAddress(address)}</span>
-                  <button onClick={disconnect} className="text-danger hover:underline">
-                    Disconnect
+                  <button onClick={() => logout()} className="text-danger hover:underline">
+                    Log out
                   </button>
                 </div>
               </div>

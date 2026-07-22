@@ -3,20 +3,15 @@ import fs from "fs";
 import path from "path";
 
 const CONTRACTS = [
-  { label: "escrow_contract", wasm: "escrow_contract.wasm" },
   { label: "jury_registry", wasm: "jury_registry.wasm" },
+  { label: "escrow_contract", wasm: "escrow_contract.wasm" },
   { label: "identity_registry", wasm: "identity_registry.wasm" },
-];
+] as const;
 
 function loadEnv(): Record<string, string> {
   const envPath = path.join(process.cwd(), ".env");
   if (!fs.existsSync(envPath)) {
-    console.error("Error: .env file not found.");
-    console.error("1. Copy .env.example to .env");
-    console.error("2. Run 'pnpm fund' to generate a testnet account");
-    console.error(
-      "3. Paste the secret from deployer.key into .env as DEPLOYER_SECRET"
-    );
+    console.error("Error: .env file not found. Copy .env.example to .env");
     process.exit(1);
   }
   const env: Record<string, string> = {};
@@ -38,59 +33,113 @@ function loadEnv(): Record<string, string> {
   return env;
 }
 
+function requireEnv(env: Record<string, string>, key: string): string {
+  const v = env[key];
+  if (!v) {
+    console.error(`Error: ${key} is required in .env (no hardcoded defaults).`);
+    process.exit(1);
+  }
+  return v;
+}
+
 function checkStellarCli(): void {
   try {
     execSync("stellar --version", { stdio: "ignore" });
   } catch {
     console.error("Error: Stellar CLI not found.");
-    console.error(
-      "Install: https://developers.stellar.org/docs/tools/developer-tools/cli/install-cli"
-    );
     process.exit(1);
   }
 }
 
+function networkFlag(env: Record<string, string>): string {
+  // Prefer named network from env; never hardcode "testnet" as sole option
+  if (env.STELLAR_NETWORK) {
+    return `--network ${env.STELLAR_NETWORK}`;
+  }
+  if (env.SOROBAN_RPC_URL && env.SOROBAN_NETWORK_PASSPHRASE) {
+    return `--rpc-url "${env.SOROBAN_RPC_URL}" --network-passphrase "${env.SOROBAN_NETWORK_PASSPHRASE}"`;
+  }
+  console.error(
+    "Error: set STELLAR_NETWORK or both SOROBAN_RPC_URL and SOROBAN_NETWORK_PASSPHRASE.",
+  );
+  process.exit(1);
+}
+
+function invoke(
+  secret: string,
+  net: string,
+  contractId: string,
+  fn: string,
+  args: string[],
+): string {
+  const cmd = [
+    "stellar",
+    "contract",
+    "invoke",
+    "--id",
+    contractId,
+    "--source",
+    secret,
+    ...net.split(" ").filter(Boolean),
+    "--",
+    fn,
+    ...args,
+  ].join(" ");
+  return execSync(cmd, { encoding: "utf-8" }).trim();
+}
+
 function main(): void {
   const force = process.argv.includes("--force");
+  const skipInit = process.argv.includes("--skip-init");
   const env = loadEnv();
-  const secret = env.DEPLOYER_SECRET;
-
-  if (!secret) {
-    console.error("Error: DEPLOYER_SECRET is not set in .env.");
-    console.error(
-      "Run 'pnpm fund' to generate a testnet account, then paste the secret into .env."
-    );
-    process.exit(1);
-  }
+  const secret = requireEnv(env, "DEPLOYER_SECRET");
+  const net = networkFlag(env);
 
   checkStellarCli();
 
   const contractsJsonPath = path.join(process.cwd(), "contracts.json");
   if (fs.existsSync(contractsJsonPath) && !force) {
-    console.error("Error: contracts.json already exists.");
-    const existing = JSON.parse(fs.readFileSync(contractsJsonPath, "utf-8"));
-    console.error(JSON.stringify(existing, null, 2));
-    console.error("\nUse --force to redeploy and overwrite.");
+    console.error("Error: contracts.json already exists. Use --force to overwrite.");
     process.exit(1);
   }
 
   const contractIds: Record<string, string> = {};
 
+  // Optional: keep existing platform/xlm token ids if present and not redeploying tokens
+  if (fs.existsSync(contractsJsonPath)) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(contractsJsonPath, "utf-8"));
+      if (prev.contracts?.platform_token) {
+        contractIds.platform_token = prev.contracts.platform_token;
+      }
+      if (prev.contracts?.xlm_token) {
+        contractIds.xlm_token = prev.contracts.xlm_token;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (env.PLATFORM_TOKEN_CONTRACT_ID) {
+    contractIds.platform_token = env.PLATFORM_TOKEN_CONTRACT_ID;
+  }
+  if (env.XLM_TOKEN_CONTRACT_ID) {
+    contractIds.xlm_token = env.XLM_TOKEN_CONTRACT_ID;
+  }
+
   for (const contract of CONTRACTS) {
     const wasmPath = `contracts/target/wasm32v1-none/release/${contract.wasm}`;
     const absWasmPath = path.join(process.cwd(), wasmPath);
-
     if (!fs.existsSync(absWasmPath)) {
-      console.error(`Error: WASM not found at ${wasmPath}`);
-      console.error("Run 'pnpm build:contracts' first.");
+      console.error(`Error: WASM not found at ${wasmPath}. Run pnpm build:contracts.`);
       process.exit(1);
     }
 
     console.log(`Deploying ${contract.label}...`);
     try {
       const result = execSync(
-        `stellar contract deploy --wasm "${wasmPath}" --source "${secret}" --network testnet`,
-        { encoding: "utf-8" }
+        `stellar contract deploy --wasm "${wasmPath}" --source "${secret}" ${net}`,
+        { encoding: "utf-8" },
       ).trim();
       contractIds[contract.label] = result;
       console.log(`  -> ${result}`);
@@ -101,22 +150,83 @@ function main(): void {
     }
   }
 
+  if (!skipInit) {
+    const admin = requireEnv(env, "ADMIN_ADDRESS");
+    const treasury = env.INIT_TREASURY_ADDRESS || admin;
+    const minXlm = requireEnv(env, "INIT_MIN_XLM_STAKE");
+    const minPlatform = requireEnv(env, "INIT_MIN_PLATFORM_STAKE");
+    const jurySize = requireEnv(env, "INIT_JURY_SIZE");
+    const quorum = requireEnv(env, "INIT_QUORUM");
+    const slashPct = requireEnv(env, "INIT_SLASH_PCT");
+    const minBps = requireEnv(env, "INIT_MIN_VOTE_CAPITAL_BPS");
+
+    if (!contractIds.platform_token || !contractIds.xlm_token) {
+      console.error(
+        "Error: PLATFORM_TOKEN_CONTRACT_ID and XLM_TOKEN_CONTRACT_ID required for init (or deploy SAC first).",
+      );
+      process.exit(1);
+    }
+
+    console.log("Initializing jury_registry...");
+    invoke(secret, net, contractIds.jury_registry, "initialize", [
+      "--admin",
+      admin,
+      "--xlm_token",
+      contractIds.xlm_token,
+      "--platform_token",
+      contractIds.platform_token,
+      "--treasury",
+      treasury,
+      "--min_xlm_stake",
+      minXlm,
+      "--min_platform_stake",
+      minPlatform,
+      "--jury_size",
+      jurySize,
+      "--quorum",
+      quorum,
+      "--slash_pct",
+      slashPct,
+    ]);
+
+    console.log("Initializing escrow_contract...");
+    invoke(secret, net, contractIds.escrow_contract, "initialize", [
+      "--admin",
+      admin,
+      "--jury_registry",
+      contractIds.jury_registry,
+      "--min_vote_capital_bps",
+      minBps,
+    ]);
+
+    console.log("Initializing identity_registry...");
+    invoke(secret, net, contractIds.identity_registry, "initialize", [
+      "--jury_registry",
+      contractIds.jury_registry,
+    ]);
+
+    console.log("Linking identity_registry on jury_registry...");
+    invoke(secret, net, contractIds.jury_registry, "set_identity_registry", [
+      "--identity_registry",
+      contractIds.identity_registry,
+    ]);
+  }
+
   const output = {
     deployedAt: new Date().toISOString(),
+    network: env.NETWORK_NAME || env.STELLAR_NETWORK || "",
     contracts: contractIds,
   };
 
-  fs.writeFileSync(
-    contractsJsonPath,
-    JSON.stringify(output, null, 2) + "\n"
-  );
-
+  fs.writeFileSync(contractsJsonPath, JSON.stringify(output, null, 2) + "\n");
   console.log("\nDeployment complete. contracts.json written.\n");
+
+  const explorer = env.EXPLORER_BASE_URL;
   for (const [name, id] of Object.entries(contractIds)) {
     console.log(`  ${name}: ${id}`);
-    console.log(
-      `  https://stellar.expert/explorer/testnet/contract/${id}\n`
-    );
+    if (explorer) {
+      console.log(`  ${explorer.replace(/\/$/, "")}/contract/${id}`);
+    }
   }
 }
 

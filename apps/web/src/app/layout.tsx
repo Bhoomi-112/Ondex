@@ -1,14 +1,43 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { Providers } from "./providers";
-import { Navbar } from "@/components/navbar";
-
-export const dynamic = "force-dynamic";
+import { SplashRoot } from "./splash-root";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "Ondex — Startup Funding on Stellar",
   description:
     "Decentralized startup funding marketplace powered by Soroban smart contracts on Stellar. Connects startups, jury, and investors through transparent, milestone-based escrow.",
+  applicationName: "Ondex",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/logo.png", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+    shortcut: ["/favicon.ico"],
+  },
+  manifest: "/site.webmanifest",
+  openGraph: {
+    title: "Ondex — Startup Funding on Stellar",
+    description:
+      "Decentralized startup funding marketplace powered by Soroban smart contracts on Stellar.",
+    siteName: "Ondex",
+    type: "website",
+    images: [{ url: "/android-chrome-512x512.png", width: 512, height: 512 }],
+  },
+  twitter: {
+    card: "summary",
+    title: "Ondex",
+    description: "Startup funding on Stellar with jury-gated escrow.",
+    images: ["/android-chrome-512x512.png"],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0a0f14",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -31,12 +60,7 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased">
-        <Providers>
-          <div className="flex min-h-screen flex-col">
-            <Navbar />
-            <main className="flex-1">{children}</main>
-          </div>
-        </Providers>
+        <SplashRoot>{children}</SplashRoot>
       </body>
     </html>
   );

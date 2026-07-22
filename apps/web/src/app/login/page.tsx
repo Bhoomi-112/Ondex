@@ -1,52 +1,96 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { useRouter } from "next/navigation"
-import { useAuthContext } from "@/components/auth/auth-provider"
-import { ConnectButton } from "@/components/wallet/connect-button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Shield } from "lucide-react"
-import Link from "next/link"
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/providers/auth";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { dashboardPathForRole } from "@/lib/auth-types";
 
-export default function LoginPage() {
-  const router = useRouter()
-  const { isAuthenticated, isLoading } = useAuthContext()
+function LoginForm() {
+  const { loginWithWallet, user, loading } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  React.useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      router.replace("/app/dashboard")
+  useEffect(() => {
+    if (loading) return;
+    if (user?.role && user.onboardingStatus === "active") {
+      const next = searchParams.get("next");
+      router.replace(next || dashboardPathForRole(user.role));
     }
-  }, [isAuthenticated, isLoading, router])
+  }, [loading, user, searchParams, router]);
+
+  const handleLogin = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const authed = await loginWithWallet();
+      if (!authed.role) {
+        router.push("/signup/role");
+      } else if (authed.onboardingStatus !== "active") {
+        router.push("/onboarding");
+      } else {
+        const next = searchParams.get("next");
+        router.push(next || dashboardPathForRole(authed.role));
+      }
+    } catch (err) {
+      console.error("Login failed:", err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 bg-zinc-950">
-      <Card className="w-full max-w-md">
-        <CardContent className="p-8 text-center">
-          <div className="flex justify-center mb-6">
-            <div className="h-16 w-16 rounded-2xl bg-teal-500/10 flex items-center justify-center">
-              <Shield className="h-8 w-8 text-teal-500" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold mb-2">Welcome to Ondex</h1>
-          <p className="text-zinc-400 text-sm mb-8">
-            Connect your Stellar wallet to continue
+    <Card>
+      <CardHeader>
+        <CardTitle>Log in to Ondex</CardTitle>
+        <CardDescription>
+          Authenticate with your Stellar wallet. Role is loaded from the server
+          — you will not re-select it on login.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button className="w-full" onClick={handleLogin} disabled={busy}>
+          {busy ? "Signing challenge…" : "Continue with wallet"}
+        </Button>
+        {error && (
+          <p className="text-sm text-danger" role="alert">
+            {error}
           </p>
-          <div className="flex justify-center mb-6">
-            <ConnectButton />
-          </div>
-          <p className="text-xs text-zinc-500">
-            We use SEP-10 for secure wallet-based authentication
-          </p>
-          <div className="mt-6 pt-6 border-t border-zinc-800">
-            <Link
-              href="/"
-              className="text-sm text-zinc-400 hover:text-white transition-colors"
-            >
-              Back to home
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
+        )}
+        <p className="text-sm text-text-secondary text-center">
+          New here?{" "}
+          <Link href="/signup" className="text-mint hover:underline">
+            Create an account
+          </Link>
+        </p>
+        <p className="text-xs text-text-muted text-center">
+          Jury access is invite-only.{" "}
+          <Link href="/apply-jury" className="underline">
+            Apply as jury
+          </Link>
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-4 py-16">
+      <Suspense fallback={<p className="text-text-muted text-center">Loading…</p>}>
+        <LoginForm />
+      </Suspense>
     </div>
-  )
+  );
 }

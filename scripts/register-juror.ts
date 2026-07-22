@@ -2,10 +2,6 @@ import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
-const PLATFORM_CONTRACT_ID =
-  process.env.PLATFORM_CONTRACT_ID ||
-  "CB3X25J5HTYZJT5YETSU7EJDL237L7DFBKPQNC3ZMKVNDR7RTZDD2BEV";
-
 function loadEnv(): Record<string, string> {
   const envPath = path.join(process.cwd(), ".env");
   if (!fs.existsSync(envPath)) {
@@ -31,75 +27,82 @@ function loadEnv(): Record<string, string> {
   return env;
 }
 
-function checkStellarCli(): void {
-  try {
-    execSync("stellar --version", { stdio: "ignore" });
-  } catch {
-    console.error("Error: Stellar CLI not found.");
-    console.error(
-      "Install: https://developers.stellar.org/docs/tools/developer-tools/cli/install-cli"
-    );
+function requireEnv(env: Record<string, string>, key: string): string {
+  const v = env[key];
+  if (!v) {
+    console.error(`Error: ${key} is required.`);
     process.exit(1);
   }
+  return v;
+}
+
+function loadJuryId(env: Record<string, string>): string {
+  if (env.JURY_REGISTRY_CONTRACT_ID) return env.JURY_REGISTRY_CONTRACT_ID;
+  const jsonPath =
+    env.CONTRACTS_JSON_PATH || path.join(process.cwd(), "contracts.json");
+  if (!fs.existsSync(jsonPath)) {
+    console.error("Error: contracts.json not found and JURY_REGISTRY_CONTRACT_ID unset.");
+    process.exit(1);
+  }
+  const raw = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+  const id = raw.contracts?.jury_registry;
+  if (!id) {
+    console.error("Error: jury_registry missing from contracts.json");
+    process.exit(1);
+  }
+  return id;
+}
+
+function networkArgs(env: Record<string, string>): string {
+  if (env.STELLAR_NETWORK) return `--network ${env.STELLAR_NETWORK}`;
+  if (env.SOROBAN_RPC_URL && env.SOROBAN_NETWORK_PASSPHRASE) {
+    return `--rpc-url "${env.SOROBAN_RPC_URL}" --network-passphrase "${env.SOROBAN_NETWORK_PASSPHRASE}"`;
+  }
+  console.error(
+    "Set STELLAR_NETWORK or SOROBAN_RPC_URL + SOROBAN_NETWORK_PASSPHRASE.",
+  );
+  process.exit(1);
 }
 
 function main(): void {
-  const jurorAddress = process.argv[2];
-
-  if (!jurorAddress) {
-    console.error("Usage: npx tsx scripts/register-juror.ts <JUROR_PUBLIC_KEY>");
-    console.error("");
-    console.error("Registers a juror address on the Ondex platform contract.");
-    console.error("Must be called by the contract admin.");
-    console.error("");
-    console.error("Example:");
-    console.error(
-      "  npx tsx scripts/register-juror.ts GBORJ3VU6YBQA...EXAMPLE"
-    );
-    process.exit(1);
-  }
-
-  checkStellarCli();
-
   const env = loadEnv();
-  const secret = env.DEPLOYER_SECRET;
-
-  if (!secret) {
-    console.error("Error: DEPLOYER_SECRET is not set in .env.");
-    console.error(
-      "This script must be run by the contract admin (the deployer account)."
-    );
+  const secret = requireEnv(env, "DEPLOYER_SECRET");
+  const juror = process.argv[2] || env.JUROR_ADDRESS;
+  if (!juror) {
+    console.error("Usage: tsx scripts/register-juror.ts <juror_address>");
     process.exit(1);
   }
+  const xlmStake = requireEnv(env, "INIT_MIN_XLM_STAKE");
+  const platformStake = requireEnv(env, "INIT_MIN_PLATFORM_STAKE");
+  const juryId = loadJuryId(env);
+  const net = networkArgs(env);
 
-  console.log(`Registering juror: ${jurorAddress}`);
-  console.log(`Platform contract: ${PLATFORM_CONTRACT_ID}`);
-  console.log("");
+  const cmd = [
+    "stellar",
+    "contract",
+    "invoke",
+    "--id",
+    juryId,
+    "--source",
+    secret,
+    net,
+    "--",
+    "register",
+    "--juror",
+    juror,
+    "--xlm_stake",
+    xlmStake,
+    "--platform_stake",
+    platformStake,
+  ].join(" ");
 
+  console.log(`Registering juror ${juror} on ${juryId}...`);
   try {
-    const result = execSync(
-      `stellar contract invoke \
-        --id "${PLATFORM_CONTRACT_ID}" \
-        --source "${secret}" \
-        --network testnet \
-        -- register_juror \
-        --juror "${jurorAddress}"`,
-      { encoding: "utf-8" }
-    ).trim();
-
-    console.log("Juror registered successfully on-chain.");
-    if (result) {
-      console.log(`Transaction: ${result}`);
-    }
+    const out = execSync(cmd, { encoding: "utf-8" });
+    console.log(out);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("Failed to register juror:");
-    console.error(message);
-    console.error("");
-    console.error("Common causes:");
-    console.error("  - The DEPLOYER_SECRET is not the contract admin");
-    console.error("  - The juror address is invalid");
-    console.error("  - The contract is not initialized");
+    console.error("register failed:", message);
     process.exit(1);
   }
 }

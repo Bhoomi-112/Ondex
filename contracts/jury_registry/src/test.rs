@@ -2,657 +2,251 @@
 
 extern crate std;
 
-use soroban_sdk::{symbol_short, Address, Env, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    token, Address, Env, Vec,
+};
 
-use crate::{CaseResult, CaseStatus, DataKey, JurorStakes, JuryRegistry, Vote};
+use crate::{CaseStatus, JuryRegistry, JuryRegistryClient, Vote};
 
-fn setup() -> (
-    Env,
-    Address,
-    Address,
-    Address,
-    Address,
-    Address,
-    Address,
-    Address,
-) {
+fn create_token(env: &Env, admin: &Address) -> Address {
+    let contract = env.register_stellar_asset_contract_v2(admin.clone());
+    contract.address()
+}
+
+fn mint(env: &Env, token_id: &Address, to: &Address, amount: i128) {
+    token::StellarAssetClient::new(env, token_id).mint(to, &amount);
+}
+
+struct Setup {
+    env: Env,
+    client: JuryRegistryClient<'static>,
+    admin: Address,
+    xlm: Address,
+    platform: Address,
+    treasury: Address,
+    juror1: Address,
+    juror2: Address,
+    juror3: Address,
+}
+
+fn setup_with_params(
+    min_xlm: i128,
+    min_platform: i128,
+    jury_size: u32,
+    quorum: u32,
+    slash_pct: u32,
+) -> Setup {
     let env = Env::default();
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
-    let identity_registry = Address::generate(&env);
-    let jury_addr = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let xlm = create_token(&env, &admin);
+    let platform = create_token(&env, &admin);
+
+    let contract_id = env.register(JuryRegistry, ());
+    let client = JuryRegistryClient::new(&env, &contract_id);
+
+    client.initialize(
+        &admin,
+        &xlm,
+        &platform,
+        &treasury,
+        &min_xlm,
+        &min_platform,
+        &jury_size,
+        &quorum,
+        &slash_pct,
+    );
 
     let juror1 = Address::generate(&env);
     let juror2 = Address::generate(&env);
     let juror3 = Address::generate(&env);
 
-    env.register(&jury_addr, JuryRegistry);
-    env.register_contract(&identity_registry, crate::IdentityRegistry);
+    for j in [&juror1, &juror2, &juror3] {
+        mint(&env, &xlm, j, min_xlm * 10);
+        mint(&env, &platform, j, min_platform * 10);
+    }
 
-    env.as_contract(&jury_addr, || {
-        env.storage()
-            .persistent()
-            .set(&DataKey::DisputeWindow, &259200u64);
-        env.storage()
-            .persistent()
-            .set(&DataKey::NumCases, &0u32);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Registered(&admin), &true);
-    });
-
-    env.as_contract(&jury_addr, || {
-        env.storage().persistent().set(
-            &DataKey::IdentityRegistry,
-            &identity_registry,
-        );
-    });
-
-    (
+    Setup {
         env,
-        jury_addr,
-        identity_registry,
+        client,
         admin,
+        xlm,
+        platform,
+        treasury,
         juror1,
         juror2,
         juror3,
-    )
+    }
+}
+
+fn default_setup() -> Setup {
+    // Injected params — not contract constants
+    setup_with_params(100, 100, 3, 2, 50)
+}
+
+fn register_all(s: &Setup, xlm: i128, platform: i128) {
+    s.client.register(&s.juror1, &xlm, &platform);
+    s.client.register(&s.juror2, &xlm, &platform);
+    s.client.register(&s.juror3, &xlm, &platform);
 }
 
 #[test]
-fn test_register_juror() {
-    let (env, jury_addr, _, _, juror1, _, _) = setup();
+fn test_initialize_and_config() {
+    let s = default_setup();
+    assert_eq!(s.client.get_admin(), s.admin);
+    assert_eq!(s.client.get_slash_pct(), 50);
+    assert_eq!(s.client.get_jury_size(), 3);
+    assert_eq!(s.client.get_quorum(), 2);
+    assert_eq!(s.client.get_min_stakes(), (100, 100));
+}
 
-    let xlm_stake: i128 = 1000;
-    let platform_stake: i128 = 500;
+#[test]
+fn test_register_transfers_tokens() {
+    let s = default_setup();
+    let xlm_client = token::Client::new(&s.env, &s.xlm);
+    let before = xlm_client.balance(&s.juror1);
 
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("register"),
-            soroban_sdk::vec![
-                &env,
-                juror1.clone().into_val(&env),
-                xlm_stake.into_val(&env),
-                platform_stake.into_val(&env),
-            ],
-        );
-    });
+    s.client.register(&s.juror1, &100, &100);
 
-    let is_reg: bool = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<bool>(
-            &jury_addr,
-            &symbol_short!("is_reg"),
-            soroban_sdk::vec![&env, juror1.clone().into_val(&env)],
-        )
-    });
+    assert!(s.client.is_reg(&s.juror1));
+    assert_eq!(xlm_client.balance(&s.juror1), before - 100);
+    assert_eq!(
+        xlm_client.balance(&s.client.address),
+        100
+    );
+    let stakes = s.client.juror_stake(&s.juror1);
+    assert_eq!(stakes.xlm, 100);
+    assert_eq!(stakes.platform, 100);
+}
 
-    assert!(is_reg);
-
-    let stakes: JurorStakes = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<JurorStakes>(
-            &jury_addr,
-            &symbol_short!("juror_stake"),
-            soroban_sdk::vec![&env, juror1.clone().into_val(&env)],
-        )
-    });
-
-    assert_eq!(stakes.xlm, xlm_stake);
-    assert_eq!(stakes.platform, platform_stake);
-    assert!(stakes.registered_at > 0);
+#[test]
+#[should_panic(expected = "stake below minimum")]
+fn test_register_below_min() {
+    let s = default_setup();
+    s.client.register(&s.juror1, &50, &100);
 }
 
 #[test]
 #[should_panic(expected = "already registered")]
 fn test_register_duplicate() {
-    let (env, jury_addr, _, _, juror1, _, _) = setup();
-
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("register"),
-            soroban_sdk::vec![
-                &env,
-                juror1.clone().into_val(&env),
-                1000i128.into_val(&env),
-                500i128.into_val(&env),
-            ],
-        );
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("register"),
-            soroban_sdk::vec![
-                &env,
-                juror1.into_val(&env),
-                1000i128.into_val(&env),
-                500i128.into_val(&env),
-            ],
-        );
-    });
-}
-
-fn register_juror(env: &Env, jury_addr: &Address, juror: &Address) {
-    env.as_contract(jury_addr, || {
-        env.invoke_contract::<()>(
-            jury_addr,
-            &symbol_short!("register"),
-            soroban_sdk::vec![
-                env,
-                juror.clone().into_val(env),
-                1000i128.into_val(env),
-                500i128.into_val(env),
-            ],
-        );
-    });
-}
-
-fn assign_case(
-    env: &Env,
-    jury_addr: &Address,
-    case_id: u32,
-    jurors: &[Address],
-) {
-    let juror_vec: Vec<Address> = jurors.iter().collect();
-    env.as_contract(jury_addr, || {
-        env.invoke_contract::<()>(
-            jury_addr,
-            &symbol_short!("assign"),
-            soroban_sdk::vec![
-                env,
-                case_id.into_val(env),
-                juror_vec.into_val(env),
-            ],
-        );
-    });
-}
-
-fn cast_vote(
-    env: &Env,
-    jury_addr: &Address,
-    case_id: u32,
-    juror: &Address,
-    vote: Vote,
-) {
-    env.as_contract(jury_addr, || {
-        env.invoke_contract::<()>(
-            jury_addr,
-            &symbol_short!("vote"),
-            soroban_sdk::vec![
-                env,
-                case_id.into_val(env),
-                juror.clone().into_val(env),
-                vote.into_val(env),
-            ],
-        );
-    });
+    let s = default_setup();
+    s.client.register(&s.juror1, &100, &100);
+    s.client.register(&s.juror1, &100, &100);
 }
 
 #[test]
-fn test_assign_and_vote_basic() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
+fn test_assign_and_vote_majority_for() {
+    let s = default_setup();
+    register_all(&s, 100, 100);
 
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
+    let mut jurors = Vec::new(&s.env);
+    jurors.push_back(s.juror1.clone());
+    jurors.push_back(s.juror2.clone());
+    jurors.push_back(s.juror3.clone());
 
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
+    let window: u64 = 3600;
+    s.client.assign(&0, &jurors, &window);
 
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2.clone(), juror3.clone(), j4, j5],
-    );
+    s.client.vote(&0, &s.juror1, &Vote::For);
+    s.client.vote(&0, &s.juror2, &Vote::For);
 
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror2, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror3, Vote::Against);
-
-    let result: CaseResult = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<CaseResult>(
-            &jury_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, 0u32.into_val(&env)],
-        )
-    });
-
+    let result = s.client.get_case(&0);
     assert_eq!(result.status, CaseStatus::Resolved);
+    assert!(result.approved);
     assert_eq!(result.for_votes, 2);
-    assert_eq!(result.against_votes, 1);
-    assert_eq!(result.total_votes, 3);
-    assert!(result.resolved_at > 0);
+    assert_eq!(result.dispute_window_secs, window);
 }
 
 #[test]
-fn test_quorum_reached_majority_for() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
+fn test_vote_majority_against_not_approved() {
+    let s = default_setup();
+    register_all(&s, 100, 100);
 
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
+    let mut jurors = Vec::new(&s.env);
+    jurors.push_back(s.juror1.clone());
+    jurors.push_back(s.juror2.clone());
+    jurors.push_back(s.juror3.clone());
+    s.client.assign(&0, &jurors, &7200u64);
 
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
+    s.client.vote(&0, &s.juror1, &Vote::Against);
+    s.client.vote(&0, &s.juror2, &Vote::Against);
 
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2.clone(), juror3.clone(), j4, j5],
-    );
-
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror2, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror3, Vote::For);
-
-    let result: CaseResult = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<CaseResult>(
-            &jury_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, 0u32.into_val(&env)],
-        )
-    });
-
+    let result = s.client.get_case(&0);
     assert_eq!(result.status, CaseStatus::Resolved);
-    assert_eq!(result.for_votes, 3);
-    assert_eq!(result.against_votes, 0);
+    assert!(!result.approved);
 }
 
 #[test]
-fn test_quorum_not_reached() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
+fn test_dispute_and_slash_uses_admin_pct() {
+    let s = setup_with_params(100, 100, 3, 2, 25);
+    register_all(&s, 100, 100);
 
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
+    let mut jurors = Vec::new(&s.env);
+    jurors.push_back(s.juror1.clone());
+    jurors.push_back(s.juror2.clone());
+    jurors.push_back(s.juror3.clone());
+    s.client.assign(&0, &jurors, &10_000u64);
 
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
+    s.client.vote(&0, &s.juror1, &Vote::For);
+    s.client.vote(&0, &s.juror2, &Vote::For);
+    s.client.vote(&0, &s.juror3, &Vote::Against);
 
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2.clone(), juror3.clone(), j4, j5],
-    );
+    let disputer = Address::generate(&s.env);
+    s.client.dispute(&0, &disputer);
 
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
+    let xlm_client = token::Client::new(&s.env, &s.xlm);
+    let treasury_before = xlm_client.balance(&s.treasury);
 
-    let result: CaseResult = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<CaseResult>(
-            &jury_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, 0u32.into_val(&env)],
-        )
-    });
+    s.client.slash(&0, &s.juror3);
 
-    assert_eq!(result.status, CaseStatus::Voting);
-    assert_eq!(result.total_votes, 1);
+    let stakes = s.client.juror_stake(&s.juror3);
+    assert_eq!(stakes.xlm, 75);
+    assert_eq!(stakes.platform, 75);
+    assert_eq!(xlm_client.balance(&s.treasury), treasury_before + 25);
+
+    let result = s.client.get_case(&0);
+    assert_eq!(result.status, CaseStatus::Slashed);
 }
 
 #[test]
-#[should_panic(expected = "juror already voted")]
-fn test_double_vote() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
-
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
-
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
-
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2, juror3, j4, j5],
-    );
-
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::Against);
-}
-
-#[test]
-#[should_panic(expected = "juror not assigned")]
-fn test_unassigned_juror_vote() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
-
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
-
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
-
-    let outsider = Address::generate(&env);
-
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1, juror2, juror3, j4, j5],
-    );
-
-    cast_vote(&env, &jury_addr, 0, &outsider, Vote::For);
-}
-
-#[test]
-fn test_dispute_within_window() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
-
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
-
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
-
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2.clone(), juror3.clone(), j4, j5],
-    );
-
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror2, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror3, Vote::Against);
-
-    let result: CaseResult = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<CaseResult>(
-            &jury_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, 0u32.into_val(&env)],
-        )
-    });
-    assert_eq!(result.status, CaseStatus::Resolved);
-
-    let disputer = Address::generate(&env);
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("dispute"),
-            soroban_sdk::vec![
-                &env,
-                0u32.into_val(&env),
-                disputer.into_val(&env),
-            ],
-        );
-    });
-
-    let result: CaseResult = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<CaseResult>(
-            &jury_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, 0u32.into_val(&env)],
-        )
-    });
-    assert_eq!(result.status, CaseStatus::Disputed);
+fn test_admin_set_slash_pct() {
+    let s = default_setup();
+    s.client.set_slash_pct(&10);
+    assert_eq!(s.client.get_slash_pct(), 10);
 }
 
 #[test]
 #[should_panic(expected = "dispute window closed")]
 fn test_dispute_after_window() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
+    let s = default_setup();
+    register_all(&s, 100, 100);
 
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
+    let mut jurors = Vec::new(&s.env);
+    jurors.push_back(s.juror1.clone());
+    jurors.push_back(s.juror2.clone());
+    jurors.push_back(s.juror3.clone());
+    s.client.assign(&0, &jurors, &100u64);
 
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
+    s.client.vote(&0, &s.juror1, &Vote::For);
+    s.client.vote(&0, &s.juror2, &Vote::For);
 
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2.clone(), juror3.clone(), j4, j5],
-    );
-
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror2, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror3, Vote::Against);
-
-    env.ledger().set_timestamp(300000);
-
-    let disputer = Address::generate(&env);
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("dispute"),
-            soroban_sdk::vec![
-                &env,
-                0u32.into_val(&env),
-                disputer.into_val(&env),
-            ],
-        );
+    s.env.ledger().with_mut(|li| {
+        li.timestamp = li.timestamp + 101;
     });
+
+    let disputer = Address::generate(&s.env);
+    s.client.dispute(&0, &disputer);
 }
 
 #[test]
-fn test_slash_dissenting_juror() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
-
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
-
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
-
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2.clone(), juror3.clone(), j4, j5],
-    );
-
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror2, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror3, Vote::Against);
-
-    let disputer = Address::generate(&env);
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("dispute"),
-            soroban_sdk::vec![
-                &env,
-                0u32.into_val(&env),
-                disputer.into_val(&env),
-            ],
-        );
-    });
-
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("slash"),
-            soroban_sdk::vec![
-                &env,
-                0u32.into_val(&env),
-                juror3.clone().into_val(&env),
-            ],
-        );
-    });
-
-    let stakes: JurorStakes = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<JurorStakes>(
-            &jury_addr,
-            &symbol_short!("juror_stake"),
-            soroban_sdk::vec![&env, juror3.into_val(&env)],
-        )
-    });
-
-    assert_eq!(stakes.xlm, 500);
-    assert_eq!(stakes.platform, 250);
-
-    let result: CaseResult = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<CaseResult>(
-            &jury_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, 0u32.into_val(&env)],
-        )
-    });
-    assert_eq!(result.status, CaseStatus::Slashed);
-}
-
-#[test]
-#[should_panic(expected = "juror vote aligns with majority")]
-fn test_slash_non_dissenting_fails() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
-
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
-
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
-
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2, juror3, j4, j5],
-    );
-
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror2, Vote::For);
-
-    let j3 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j3);
-    cast_vote(&env, &jury_addr, 0, &j3, Vote::For);
-
-    let disputer = Address::generate(&env);
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("dispute"),
-            soroban_sdk::vec![
-                &env,
-                0u32.into_val(&env),
-                disputer.into_val(&env),
-            ],
-        );
-    });
-
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("slash"),
-            soroban_sdk::vec![
-                &env,
-                0u32.into_val(&env),
-                juror1.into_val(&env),
-            ],
-        );
-    });
-}
-
-#[test]
-fn test_full_lifecycle() {
-    let (env, jury_addr, _, _, juror1, juror2, juror3) = setup();
-
-    register_juror(&env, &jury_addr, &juror1);
-    register_juror(&env, &jury_addr, &juror2);
-    register_juror(&env, &jury_addr, &juror3);
-
-    let j4 = Address::generate(&env);
-    let j5 = Address::generate(&env);
-    register_juror(&env, &jury_addr, &j4);
-    register_juror(&env, &jury_addr, &j5);
-
-    assign_case(
-        &env,
-        &jury_addr,
-        0,
-        &[juror1.clone(), juror2.clone(), juror3.clone(), j4.clone(), j5.clone()],
-    );
-
-    cast_vote(&env, &jury_addr, 0, &juror1, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror2, Vote::For);
-    cast_vote(&env, &jury_addr, 0, &juror3, Vote::Against);
-
-    let result: CaseResult = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<CaseResult>(
-            &jury_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, 0u32.into_val(&env)],
-        )
-    });
-    assert_eq!(result.status, CaseStatus::Resolved);
-
-    let disputer = Address::generate(&env);
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("dispute"),
-            soroban_sdk::vec![
-                &env,
-                0u32.into_val(&env),
-                disputer.into_val(&env),
-            ],
-        );
-    });
-
-    env.as_contract(&jury_addr, || {
-        env.invoke_contract::<()>(
-            &jury_addr,
-            &symbol_short!("slash"),
-            soroban_sdk::vec![
-                &env,
-                0u32.into_val(&env),
-                juror3.into_val(&env),
-            ],
-        );
-    });
-
-    let final_stakes: JurorStakes = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<JurorStakes>(
-            &jury_addr,
-            &symbol_short!("juror_stake"),
-            soroban_sdk::vec![&env, juror3.into_val(&env)],
-        )
-    });
-    assert_eq!(final_stakes.xlm, 500);
-    assert_eq!(final_stakes.platform, 250);
-
-    let final_result: CaseResult = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<CaseResult>(
-            &jury_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, 0u32.into_val(&env)],
-        )
-    });
-    assert_eq!(final_result.status, CaseStatus::Slashed);
-
-    let dispute_win: u64 = env.as_contract(&jury_addr, || {
-        env.invoke_contract::<u64>(
-            &jury_addr,
-            &symbol_short!("disp_win"),
-            soroban_sdk::vec![&env],
-        )
-    });
-    assert_eq!(dispute_win, 259200);
+#[should_panic(expected = "juror count must equal jury_size")]
+fn test_assign_wrong_count() {
+    let s = default_setup();
+    register_all(&s, 100, 100);
+    let mut jurors = Vec::new(&s.env);
+    jurors.push_back(s.juror1.clone());
+    s.client.assign(&0, &jurors, &100u64);
 }

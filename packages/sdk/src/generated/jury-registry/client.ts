@@ -1,5 +1,2 @@
-export class Client {
-  static from(_options: unknown) {
-    return new Client();
-  }
-}
+export { Client } from "./index";
+export type { Client as ClientType } from "./index";

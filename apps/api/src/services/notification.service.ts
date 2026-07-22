@@ -37,6 +37,10 @@ export async function markRead(id: string) {
   return notificationRepo.markRead(id);
 }
 
+export async function markReadForWallet(id: string, wallet: string) {
+  return notificationRepo.markReadForWallet(id, wallet);
+}
+
 export async function markAllRead(wallet: string) {
   return notificationRepo.markAllRead(wallet);
 }

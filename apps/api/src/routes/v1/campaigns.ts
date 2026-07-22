@@ -17,7 +17,7 @@ router.get(
   "/",
   validate(listQuerySchema, "query"),
   async (req, res) => {
-    const q = req.query as unknown as z.infer<typeof listQuerySchema>;
+    const q = ((req as unknown as Record<string, unknown>).validatedQuery ?? req.query) as z.infer<typeof listQuerySchema>;
 
     const { items, total } = await campaignService.listCampaigns({
       state: q.state,

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/providers/wallet";
+import { Logo } from "@/components/logo";
+import { SPLASH_LEAVING_EVENT } from "@/components/landing/intro-splash";
 
 const heroWords = [
   { text: "Fund", fade: false },
@@ -79,7 +81,14 @@ export default function CinematicLanding() {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeStage, setActiveStage] = useState(0);
+  const [heroRevealed, setHeroRevealed] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const reveal = () => setHeroRevealed(true);
+    window.addEventListener(SPLASH_LEAVING_EVENT, reveal);
+    return () => window.removeEventListener(SPLASH_LEAVING_EVENT, reveal);
+  }, []);
 
   const onScroll = useCallback(() => {
     const scrollTop = window.scrollY;
@@ -158,11 +167,11 @@ export default function CinematicLanding() {
         aria-valuemax={100}
       />
 
-      {/* Hero */}
       <section className="relative min-h-screen flex flex-col items-start justify-center max-w-[1100px] mx-auto px-6 md:px-12">
         <div
-          className="eyebrow"
-          style={{ opacity: 0, animation: "fade-up 0.8s ease forwards 0.1s" }}
+          className={`eyebrow transition-all duration-[800ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+            heroRevealed ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+          }`}
         >
           Decentralized startup funding on Stellar
         </div>
@@ -174,8 +183,15 @@ export default function CinematicLanding() {
           {heroWords.map((w, i) => (
             <span
               key={i}
-              className={`word-reveal ${w.fade ? "text-text-secondary" : ""}`}
-              style={{ animationDelay: `${0.25 + i * 0.07}s` }}
+              className={`inline-block transition-all duration-[800ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+                heroRevealed
+                  ? "translate-y-0 opacity-100 blur-0"
+                  : "translate-y-4 opacity-0 blur-[4px]"
+              }`}
+              style={{
+                transitionDelay: heroRevealed ? `${0.12 + i * 0.06}s` : "0s",
+                color: w.fade ? "var(--color-text-secondary)" : undefined,
+              }}
             >
               {w.text}
               {i < heroWords.length - 1 ? "\u00A0" : ""}
@@ -184,16 +200,20 @@ export default function CinematicLanding() {
         </h1>
 
         <p
-          className="mt-7 text-[17px] text-text-secondary max-w-[520px] leading-relaxed"
-          style={{ opacity: 0, animation: "fade-up 0.8s ease forwards 0.9s" }}
+          className={`mt-7 text-[17px] text-text-secondary max-w-[520px] leading-relaxed transition-all duration-[800ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+            heroRevealed ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+          }`}
+          style={{ transitionDelay: heroRevealed ? "0.45s" : "0s" }}
         >
           Ondex connects startups with investors through transparent,
           milestone-based escrow powered by Soroban smart contracts on Stellar.
         </p>
 
         <div
-          className="mt-10 flex gap-4 items-center"
-          style={{ opacity: 0, animation: "fade-up 0.8s ease forwards 1.1s" }}
+          className={`mt-10 flex gap-4 items-center transition-all duration-[800ms] ease-[cubic-bezier(.22,.9,.3,1)] ${
+            heroRevealed ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+          }`}
+          style={{ transitionDelay: heroRevealed ? "0.65s" : "0s" }}
         >
           <button
             onClick={connect}
@@ -205,14 +225,6 @@ export default function CinematicLanding() {
           <a href="#how" className="btn-cta-ghost">
             See how it works →
           </a>
-        </div>
-
-        <div
-          className="scroll-cue"
-          style={{ opacity: 0, animation: "fade-up 0.8s ease forwards 1.6s" }}
-        >
-          <div className="scroll-cue-line" />
-          Scroll
         </div>
       </section>
 
@@ -378,8 +390,9 @@ export default function CinematicLanding() {
               For Investors
             </Link>
           </div>
-          <div className="w-full mt-14 text-xs text-[#6b6a5e] border-t border-black/10 pt-6">
-            © {new Date().getFullYear()} Ondex. All rights reserved.
+          <div className="w-full mt-14 flex flex-wrap items-center justify-between gap-4 text-xs text-[#6b6a5e] border-t border-black/10 pt-6">
+            <Logo imgClassName="h-8 w-8" />
+            <span>© {new Date().getFullYear()} Ondex. All rights reserved.</span>
           </div>
         </div>
       </footer>

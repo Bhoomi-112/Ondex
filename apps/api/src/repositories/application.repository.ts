@@ -71,6 +71,14 @@ export async function findAllPending() {
   });
 }
 
+export async function findByStatus(status: string) {
+  return prisma.application.findMany({
+    where: { status },
+    orderBy: { createdAt: "desc" },
+    include: { milestones: true },
+  });
+}
+
 export async function updateStatus(onChainId: number, status: string) {
   return prisma.application.update({
     where: { onChainId },

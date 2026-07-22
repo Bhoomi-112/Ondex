@@ -21,14 +21,8 @@ pub struct CaseResult {
     pub against_votes: u32,
     pub total_votes: u32,
     pub resolved_at: u64,
-}
-
-#[derive(Clone)]
-#[contracttype]
-pub struct IdentityRecord {
-    pub revealed: bool,
-    pub backend_ref: Bytes,
-    pub revealed_at: u64,
+    pub approved: bool,
+    pub dispute_window_secs: u64,
 }
 
 #[derive(Clone)]
@@ -40,22 +34,46 @@ pub enum DataKey {
     Nullifier(Bytes),
     CaseLink(Bytes),
     JuryRegistry,
+    Initialized,
 }
 
 #[contract]
 pub struct IdentityRegistry;
 
+fn require_init(env: &Env) {
+    if !env
+        .storage()
+        .instance()
+        .get::<_, bool>(&DataKey::Initialized)
+        .unwrap_or(false)
+    {
+        panic!("not initialized");
+    }
+}
+
 #[contractimpl]
 impl IdentityRegistry {
     pub fn initialize(env: Env, jury_registry: Address) {
+        if env
+            .storage()
+            .instance()
+            .get::<_, bool>(&DataKey::Initialized)
+            .unwrap_or(false)
+        {
+            panic!("already initialized");
+        }
         env.storage()
-            .persistent()
+            .instance()
             .set(&DataKey::JuryRegistry, &jury_registry);
+        env.storage()
+            .instance()
+            .set(&DataKey::Initialized, &true);
         env.events()
             .publish((symbol_short!("INIT"),), (jury_registry,));
     }
 
     pub fn commit(env: Env, identity_id: Bytes, commitment_hash: Bytes) {
+        require_init(&env);
         if env
             .storage()
             .persistent()
@@ -78,6 +96,7 @@ impl IdentityRegistry {
     }
 
     pub fn link_case(env: Env, identity_id: Bytes, case_id: u32) {
+        require_init(&env);
         if !env
             .storage()
             .persistent()
@@ -96,6 +115,7 @@ impl IdentityRegistry {
     }
 
     pub fn reveal(env: Env, identity_id: Bytes, case_id: u32, backend_ref: Bytes) {
+        require_init(&env);
         if !env
             .storage()
             .persistent()
@@ -126,7 +146,7 @@ impl IdentityRegistry {
 
         let jury_registry_addr: Address = env
             .storage()
-            .persistent()
+            .instance()
             .get(&DataKey::JuryRegistry)
             .expect("jury registry not set");
 
@@ -136,8 +156,10 @@ impl IdentityRegistry {
             soroban_sdk::vec![&env, case_id.into_val(&env)],
         );
 
-        if case_result.status != CaseStatus::Resolved {
-            panic!("jury vote has not concluded");
+        // Terminal states only — vote has concluded (resolved, disputed, or slashed)
+        match case_result.status {
+            CaseStatus::Resolved | CaseStatus::Disputed | CaseStatus::Slashed => {}
+            CaseStatus::Voting => panic!("jury vote has not concluded"),
         }
 
         env.storage()
@@ -154,6 +176,7 @@ impl IdentityRegistry {
     }
 
     pub fn verify(env: Env, identity_id: Bytes) -> bool {
+        require_init(&env);
         env.storage()
             .persistent()
             .get::<_, bool>(&DataKey::Revealed(identity_id))
@@ -161,6 +184,7 @@ impl IdentityRegistry {
     }
 
     pub fn get_commitment(env: Env, identity_id: Bytes) -> Bytes {
+        require_init(&env);
         env.storage()
             .persistent()
             .get(&DataKey::Commitment(identity_id))
@@ -168,6 +192,7 @@ impl IdentityRegistry {
     }
 
     pub fn is_committed(env: Env, identity_id: Bytes) -> bool {
+        require_init(&env);
         env.storage()
             .persistent()
             .get::<_, bool>(&DataKey::Committed(identity_id))
@@ -175,6 +200,7 @@ impl IdentityRegistry {
     }
 
     pub fn get_linked_case(env: Env, identity_id: Bytes) -> u32 {
+        require_init(&env);
         env.storage()
             .persistent()
             .get(&DataKey::CaseLink(identity_id))
@@ -182,8 +208,9 @@ impl IdentityRegistry {
     }
 
     pub fn get_jury_registry(env: Env) -> Address {
+        require_init(&env);
         env.storage()
-            .persistent()
+            .instance()
             .get(&DataKey::JuryRegistry)
             .expect("jury registry not set")
     }

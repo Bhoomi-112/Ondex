@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@/providers/wallet";
+import { useAuth } from "@/providers/auth";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,18 +10,47 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TransactionStatus } from "@/components/ui/transaction-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowUpRight, CheckCircle2, XCircle, Clock, FileText, Lock } from "lucide-react";
-import { formatXLM, stroopsToXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
-import { getPlatformClient, getEscrowClient } from "@/lib/contracts";
+import {
+  CheckCircle2, XCircle, Clock, FileText, Lock, Users2,
+  Coins, Tag, Building2, Lightbulb, Zap, ExternalLink, Wallet, User,
+} from "lucide-react";
+import { formatXLM, stroopsToXLM, formatAddress } from "@/lib/utils";
+import {
+  getEscrowClient,
+  getNetworkConfig,
+} from "@/lib/contracts";
+import {
+  fetchApplicationsByStartup,
+  fetchApplicationVotes,
+  appId as resolveAppId,
+  type ApiApplication,
+} from "@/lib/api";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
-import { Networks } from "@stellar/stellar-sdk";
+import { completeProfile } from "@/lib/auth-api";
+import { Input } from "@/components/ui/input";
 import Link from "next/link";
 
 interface Application {
   id: number;
   name: string;
+  tagline?: string;
+  website?: string;
+  logoUrl?: string;
+  category?: string;
+  stage?: string;
+  problem?: string;
+  solution?: string;
+  targetMarket?: string;
+  marketSize?: string;
   pitch: string;
+  currentStatus?: string;
+  traction?: string;
+  teamBackground?: string;
+  socialLinks?: string;
+  previousExperience?: string;
   askAmount: number;
+  useOfFunds?: string;
+  revenueModel?: string;
   status: "Submitted" | "UnderReview" | "Approved" | "Rejected";
   milestones: { description: string; amount: number; released: boolean }[];
 }
@@ -34,7 +64,10 @@ interface Vote {
 
 export default function StartupDashboard() {
   const { address, signTransaction } = useWallet();
+  const { user, refreshUser } = useAuth();
   const { addToast } = useToast();
+  const [editingName, setEditingName] = useState(false);
+  const [editName, setEditName] = useState("");
   const [applications, setApplications] = useState<Application[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,10 +79,6 @@ export default function StartupDashboard() {
     if (!address) return;
     setLoading(true);
     try {
-      const client = getPlatformClient(address);
-      const appsResult = await client.list_applications({ offset: BigInt(0), limit: BigInt(100) });
-      const rawApps = appsResult.result;
-
       const statusMap: Record<string, Application["status"]> = {
         Submitted: "Submitted",
         UnderReview: "UnderReview",
@@ -57,49 +86,65 @@ export default function StartupDashboard() {
         Rejected: "Rejected",
       };
 
-      const myApps: Application[] = rawApps
-        .filter((app: any) => app.startup === address)
-        .map((app: any) => {
-          const statusTag = app.status?.tag || "Submitted";
-          const milestones = app.milestones?.map((m: any, i: number) => ({
-            description: m.description || `Milestone ${i + 1}`,
-            amount: stroopsToXLM(m.amount),
-            released: false,
-          })) || [];
+      const rawApps = await fetchApplicationsByStartup(address);
+      const myApps: Application[] = rawApps.map((app: ApiApplication) => {
+        const statusTag = app.status || "Submitted";
+        const ask = app.askAmount ?? app.ask_amount ?? 0;
+        const askNum =
+          Number(ask) > 1e6 ? stroopsToXLM(Number(ask)) : Number(ask);
+        const milestones =
+          app.milestones?.map((m, i) => {
+            const amt = m.amount ?? 0;
+            return {
+              description: m.description || `Milestone ${i + 1}`,
+              amount:
+                Number(amt) > 1e6 ? stroopsToXLM(Number(amt)) : Number(amt),
+              released: !!m.released,
+            };
+          }) || [];
 
-          return {
-            id: Number(app.id),
-            name: app.name || "Anonymous",
-            pitch: app.pitch || "",
-            askAmount: stroopsToXLM(app.ask_amount),
-            status: statusMap[statusTag] || "Submitted",
-            milestones,
-          };
-        });
+        return {
+          id: resolveAppId(app),
+          name: app.name || "Anonymous",
+          tagline: app.tagline,
+          website: app.website,
+          logoUrl: app.logoUrl ?? app.logo_url,
+          category: app.category,
+          stage: app.stage,
+          problem: app.problem,
+          solution: app.solution,
+          targetMarket: app.targetMarket ?? app.target_market,
+          marketSize: app.marketSize ?? app.market_size,
+          pitch: app.pitch || "",
+          currentStatus: app.currentStatus ?? app.current_status,
+          traction: app.traction,
+          teamBackground: app.teamBackground ?? app.team_background,
+          socialLinks: app.socialLinks ?? app.social_links,
+          previousExperience: app.previousExperience ?? app.previous_experience,
+          askAmount: askNum,
+          useOfFunds: app.useOfFunds ?? app.use_of_funds,
+          revenueModel: app.revenueModel ?? app.revenue_model,
+          status: statusMap[statusTag] || "Submitted",
+          milestones,
+        };
+      });
 
       if (myApps.length > 0 && myApps[0].status === "Approved") {
         try {
           const escrowClient = getEscrowClient(address);
-          const milestoneCountResult = await escrowClient.get_milestone_count();
-          const totalMilestones = Number(milestoneCountResult.result);
-
-          const releasedCountResult = await escrowClient.get_released_count();
-          const releasedCount = Number(releasedCountResult.result);
-
-          const milestoneDetails = await Promise.allSettled(
-            Array.from({ length: totalMilestones }, (_, i) =>
-              escrowClient.get_milestone({ index: i })
-            )
-          );
-
-          for (let i = 0; i < totalMilestones && i < myApps[0].milestones.length; i++) {
-            const detail = milestoneDetails[i];
-            if (detail.status === "fulfilled") {
-              myApps[0].milestones[i].released = detail.status === "fulfilled" && (detail.value.result as any)?.released === true;
-            }
+          const camp = await escrowClient.get_campaign({
+            campaign_id: myApps[0].id,
+          });
+          const state = (camp.result as { state?: { tag?: string } })?.state
+            ?.tag;
+          if (state === "Released") {
+            myApps[0].milestones = myApps[0].milestones.map((m) => ({
+              ...m,
+              released: true,
+            }));
           }
         } catch {
-          // Escrow may not be initialized
+          // Escrow may not be open yet
         }
       }
 
@@ -107,20 +152,21 @@ export default function StartupDashboard() {
 
       if (myApps[0]) {
         try {
-          const votesResult = await client.get_votes({ app_id: BigInt(myApps[0].id) });
-          const votes = (votesResult.result || []).map((v: any) => ({
-            voter: v.voter,
-            approve: v.approve,
-            commentHash: v.comment_hash || "",
-            timestamp: Number(v.timestamp),
-          }));
-          setVotes(votes);
+          const votesRaw = await fetchApplicationVotes(myApps[0].id);
+          setVotes(
+            votesRaw.map((v) => ({
+              voter: v.voter || "",
+              approve: !!v.approve,
+              commentHash: "",
+              timestamp: Number(v.timestamp || 0),
+            })),
+          );
         } catch {
           setVotes([]);
         }
       }
     } catch (err) {
-      console.error("Failed to fetch applications from chain:", err);
+      console.error("Failed to fetch applications:", err);
     } finally {
       setLoading(false);
     }
@@ -132,23 +178,41 @@ export default function StartupDashboard() {
 
   const handleReleaseMilestone = async (index: number) => {
     if (!address) return;
+    const campaignId = applications[0]?.id;
+    if (campaignId == null) return;
 
     setTxStatus("signing");
     setTxError(undefined);
 
     try {
       setTxStatus("submitting");
+      const escrow = getEscrowClient(address);
+      try {
+        await buildSignSubmit(
+          () => escrow.jury_approved({ campaign_id: campaignId }),
+          (xdr) =>
+            signTransaction(xdr, {
+              networkPassphrase: getNetworkConfig().networkPassphrase,
+            }),
+        );
+      } catch {
+        // already approved or not ready — continue to release
+      }
+
       const result = await buildSignSubmit(
-        () => getEscrowClient(address).release_milestone({ index }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        () => escrow.release({ campaign_id: campaignId }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
       setTxStatus("success");
 
       addToast({
-        title: "Milestone Released",
-        description: `Milestone ${index + 1} funds have been released from escrow.`,
+        title: "Funds Released",
+        description: `Campaign #${campaignId} funds released from escrow (milestone ${index + 1}).`,
         variant: "success",
         txHash: result.hash,
         txUrl: getExplorerUrl(result.hash),
@@ -173,6 +237,23 @@ export default function StartupDashboard() {
     }
   };
 
+  const handleSaveName = async () => {
+    const name = editName.trim();
+    if (!name || name.length < 2) {
+      addToast({ title: "Invalid name", description: "Name must be at least 2 characters.", variant: "error" });
+      return;
+    }
+    try {
+      await completeProfile({ displayName: name, bio: user?.bio ?? undefined });
+      await refreshUser();
+      setEditingName(false);
+      addToast({ title: "Name updated", variant: "success" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast({ title: "Failed to update name", description: msg, variant: "error" });
+    }
+  };
+
   const statusBadge = (status: string) => {
     switch (status) {
       case "Submitted":
@@ -194,7 +275,7 @@ export default function StartupDashboard() {
         <Card>
           <CardContent className="py-12">
             <h2 className="text-xl font-semibold text-text-primary mb-4">
-              Connect your wallet to view your startup dashboard
+              Connect your wallet to view your founder profile
             </h2>
             <p className="text-text-secondary">
               Use the &quot;Connect Wallet&quot; button in the navbar to get started.
@@ -207,13 +288,6 @@ export default function StartupDashboard() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">Startup Dashboard</h1>
-        <p className="text-text-secondary mt-1">
-          Manage your funding application and track milestone progress.
-        </p>
-      </div>
-
       {txStatus !== "idle" && (
         <Card className="mb-6">
           <CardContent>
@@ -221,6 +295,109 @@ export default function StartupDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Founder Profile Header */}
+      <Card className="mb-8">
+        <CardContent className="py-8">
+          <div className="flex flex-col sm:flex-row items-start gap-6">
+            <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-mint/20 to-accent/20 flex items-center justify-center shrink-0 border border-white/10">
+              <User className="h-10 w-10 text-mint" />
+            </div>
+            <div className="flex-1 min-w-0">
+              {editingName ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Your name"
+                    className="max-w-xs"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); if (e.key === "Escape") setEditingName(false); }}
+                    autoFocus
+                  />
+                  <Button size="sm" onClick={handleSaveName}>Save</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setEditingName(false)}>Cancel</Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold text-text-primary">
+                    {user?.displayName || "Founder"}
+                  </h1>
+                  <button
+                    onClick={() => { setEditName(user?.displayName || ""); setEditingName(true); }}
+                    className="text-text-muted hover:text-text-primary transition-colors"
+                    title="Edit name"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                  </button>
+                </div>
+              )}
+              {user?.bio && (
+                <p className="text-text-secondary mt-1">{user.bio}</p>
+              )}
+              <div className="flex flex-wrap items-center gap-3 mt-3">
+                <div className="flex items-center gap-1.5 text-sm text-text-muted">
+                  <Wallet className="h-4 w-4" />
+                  <span className="font-mono">{formatAddress(address)}</span>
+                </div>
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <Building2 className="h-3 w-3" />
+                  Founder
+                </Badge>
+                {applications[0] && (
+                  <Badge variant="secondary" className="flex items-center gap-1">
+                    <FileText className="h-3 w-3" />
+                    Application #{applications[0].id}
+                  </Badge>
+                )}
+              </div>
+            </div>
+            {applications.length === 0 && (
+              <Link href="/startup/apply">
+                <Button>Apply for Funding</Button>
+              </Link>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Stats Cards */}
+      <div className="grid gap-4 sm:grid-cols-3 mb-8">
+        <Card>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-mint/10 p-2">
+              <FileText className="h-5 w-5 text-mint" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Applications</p>
+              <p className="text-lg font-bold text-text-primary">{applications.length}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-accent/10 p-2">
+              <Coins className="h-5 w-5 text-accent" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Total Ask</p>
+              <p className="text-lg font-bold text-text-primary">
+                {applications.length > 0 ? `${formatXLM(applications[0].askAmount)} XLM` : "—"}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-warning/10 p-2">
+              <Users2 className="h-5 w-5 text-warning" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Votes Cast</p>
+              <p className="text-lg font-bold text-text-primary">{votes.length}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {loading ? (
         <div className="space-y-4">
@@ -255,38 +432,202 @@ export default function StartupDashboard() {
           <TabsContent value="application" className="space-y-4">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>{applications[0].name}</CardTitle>
-                  {statusBadge(applications[0].status)}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    {applications[0].logoUrl ? (
+                      <img
+                        src={applications[0].logoUrl}
+                        alt=""
+                        className="h-10 w-10 rounded-lg object-contain"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded-lg bg-card-hover flex items-center justify-center">
+                        <Building2 className="h-5 w-5 text-text-muted" />
+                      </div>
+                    )}
+                    <div>
+                      <CardTitle>{applications[0].name}</CardTitle>
+                      {applications[0].tagline && (
+                        <p className="text-sm text-text-secondary mt-0.5">
+                          {applications[0].tagline}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {applications[0].website && (
+                      <a
+                        href={applications[0].website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-text-muted hover:text-text-primary transition-colors"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                    {statusBadge(applications[0].status)}
+                  </div>
                 </div>
                 <CardDescription>
                   Application #{applications[0].id}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-sm text-text-muted mb-1">Pitch</p>
-                  <p className="text-text-primary">{applications[0].pitch}</p>
+              <CardContent className="space-y-6">
+
+                {/* Overview badges */}
+                <div className="flex flex-wrap gap-2">
+                  {applications[0].category && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <Tag className="h-3 w-3" />
+                      {applications[0].category}
+                    </Badge>
+                  )}
+                  {applications[0].stage && (
+                    <Badge variant="secondary">{applications[0].stage}</Badge>
+                  )}
+                  {applications[0].revenueModel && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <Coins className="h-3 w-3" />
+                      {applications[0].revenueModel}
+                    </Badge>
+                  )}
                 </div>
-                <div>
-                  <p className="text-sm text-text-muted mb-1">Funding Ask</p>
-                  <p className="text-2xl font-bold text-text-primary">
-                    {formatXLM(applications[0].askAmount)} XLM
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-text-muted mb-2">Milestones</p>
-                  <div className="space-y-2">
-                    {applications[0].milestones.map((ms, i) => (
-                      <div key={i} className="flex items-center justify-between rounded-md bg-background p-3">
-                        <span className="text-sm text-text-primary">{ms.description}</span>
-                        <span className="text-sm font-mono text-text-secondary">
-                          {formatXLM(ms.amount)} XLM
-                        </span>
+
+                {/* Problem & Solution */}
+                {(applications[0].problem || applications[0].solution) && (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {applications[0].problem && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-sm text-text-muted">
+                          <Lightbulb className="h-4 w-4" />
+                          Problem
+                        </div>
+                        <p className="text-sm text-text-primary whitespace-pre-wrap">
+                          {applications[0].problem}
+                        </p>
                       </div>
-                    ))}
+                    )}
+                    {applications[0].solution && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-sm text-text-muted">
+                          <Zap className="h-4 w-4" />
+                          Solution
+                        </div>
+                        <p className="text-sm text-text-primary whitespace-pre-wrap">
+                          {applications[0].solution}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Market info */}
+                {(applications[0].targetMarket || applications[0].marketSize) && (
+                  <div className="flex flex-wrap gap-6 text-sm">
+                    {applications[0].targetMarket && (
+                      <div>
+                        <span className="text-text-muted">Target Market: </span>
+                        <span className="text-text-primary">{applications[0].targetMarket}</span>
+                      </div>
+                    )}
+                    {applications[0].marketSize && (
+                      <div>
+                        <span className="text-text-muted">Market Size: </span>
+                        <span className="text-text-primary">{applications[0].marketSize}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Detailed Pitch */}
+                <div>
+                  <p className="text-sm text-text-muted mb-1">Detailed Description</p>
+                  <p className="text-text-primary whitespace-pre-wrap">{applications[0].pitch}</p>
+                </div>
+
+                {/* Current Status & Traction */}
+                {(applications[0].currentStatus || applications[0].traction) && (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {applications[0].currentStatus && (
+                      <div>
+                        <p className="text-sm text-text-muted mb-0.5">Current Status</p>
+                        <p className="text-sm text-text-primary">{applications[0].currentStatus}</p>
+                      </div>
+                    )}
+                    {applications[0].traction && (
+                      <div>
+                        <p className="text-sm text-text-muted mb-0.5">Traction & Metrics</p>
+                        <p className="text-sm text-text-primary">{applications[0].traction}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Team */}
+                {(applications[0].teamBackground || applications[0].socialLinks || applications[0].previousExperience) && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-1.5 text-sm text-text-muted">
+                      <Users2 className="h-4 w-4" />
+                      Team
+                    </div>
+                    {applications[0].teamBackground && (
+                      <p className="text-sm text-text-primary whitespace-pre-wrap">
+                        {applications[0].teamBackground}
+                      </p>
+                    )}
+                    {applications[0].socialLinks && (
+                      <p className="text-xs text-text-muted break-all">
+                        {applications[0].socialLinks}
+                      </p>
+                    )}
+                    {applications[0].previousExperience && (
+                      <p className="text-sm text-text-secondary whitespace-pre-wrap">
+                        {applications[0].previousExperience}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Funding */}
+                <div className="border-t border-border pt-4">
+                  <div className="grid sm:grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <p className="text-sm text-text-muted mb-1">Funding Ask</p>
+                      <p className="text-2xl font-bold text-text-primary">
+                        {formatXLM(applications[0].askAmount)} XLM
+                      </p>
+                    </div>
+                    {applications[0].revenueModel && (
+                      <div>
+                        <p className="text-sm text-text-muted mb-1">Revenue Model</p>
+                        <p className="text-sm text-text-primary">{applications[0].revenueModel}</p>
+                      </div>
+                    )}
+                  </div>
+                  {applications[0].useOfFunds && (
+                    <div className="mb-4">
+                      <p className="text-sm text-text-muted mb-1">Use of Funds</p>
+                      <p className="text-sm text-text-primary whitespace-pre-wrap">
+                        {applications[0].useOfFunds}
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-sm text-text-muted mb-2">Milestones</p>
+                    <div className="space-y-2">
+                      {applications[0].milestones.map((ms, i) => (
+                        <div key={i} className="flex items-center justify-between rounded-md bg-background p-3">
+                          <span className="text-sm text-text-primary">{ms.description}</span>
+                          <span className="text-sm font-mono text-text-secondary">
+                            {formatXLM(ms.amount)} XLM
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
+
               </CardContent>
             </Card>
           </TabsContent>

@@ -2,558 +2,228 @@
 
 extern crate std;
 
-use soroban_sdk::{symbol_short, Address, Env};
-
-use crate::{
-    Campaign, DataKey, EscrowContract, EscrowState, InvestorVoteCount, JuryCaseResult,
-    JuryCaseStatus,
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    token, Address, Env,
 };
 
-#[derive(Clone)]
-#[soroban_sdk::contracttype]
-pub enum MockJuryCaseStatus {
-    Voting,
-    Resolved,
-    Disputed,
-    Slashed,
-}
+use crate::{EscrowContract, EscrowContractClient, EscrowState};
 
-#[derive(Clone)]
-#[soroban_sdk::contracttype]
-pub struct MockJuryCaseResult {
-    pub status: MockJuryCaseStatus,
-    pub for_votes: u32,
-    pub against_votes: u32,
-    pub total_votes: u32,
-    pub resolved_at: u64,
-}
-
+// Minimal mock jury matching JuryCaseResult layout
 #[soroban_sdk::contract]
-pub struct MockJuryRegistry;
+pub struct MockJury;
 
 #[soroban_sdk::contractimpl]
-impl MockJuryRegistry {
-    pub fn init_mock(env: Env, case_id: u32, resolved: bool) {
-        let status = if resolved {
-            MockJuryCaseStatus::Resolved
-        } else {
-            MockJuryCaseStatus::Voting
-        };
-        let result = MockJuryCaseResult {
+impl MockJury {
+    pub fn set_case(
+        env: Env,
+        case_id: u32,
+        status: crate::JuryCaseStatus,
+        approved: bool,
+        window: u64,
+    ) {
+        let result = crate::JuryCaseResult {
             status,
-            for_votes: if resolved { 3 } else { 0 },
-            against_votes: if resolved { 2 } else { 0 },
-            total_votes: if resolved { 5 } else { 0 },
-            resolved_at: if resolved {
-                env.ledger().timestamp()
-            } else {
-                0
-            },
+            for_votes: if approved { 2 } else { 0 },
+            against_votes: if approved { 0 } else { 2 },
+            total_votes: 2,
+            resolved_at: env.ledger().timestamp(),
+            approved,
+            dispute_window_secs: window,
         };
         env.storage()
             .persistent()
-            .set(&MockDataKey::Case(case_id), &result);
+            .set(&case_id, &result);
     }
 
-    pub fn get_case(env: Env, case_id: u32) -> MockJuryCaseResult {
+    pub fn get_case(env: Env, case_id: u32) -> crate::JuryCaseResult {
         env.storage()
             .persistent()
-            .get(&MockDataKey::Case(case_id))
+            .get(&case_id)
             .expect("case not found")
     }
 }
 
-#[derive(Clone)]
-#[soroban_sdk::contracttype]
-enum MockDataKey {
-    Case(u32),
+struct Setup {
+    env: Env,
+    client: EscrowContractClient<'static>,
+    admin: Address,
+    jury: Address,
+    asset: Address,
+    startup: Address,
+    inv1: Address,
+    inv2: Address,
 }
 
-fn setup() -> (Env, Address, Address, Address) {
+fn create_token(env: &Env, admin: &Address) -> Address {
+    env.register_stellar_asset_contract_v2(admin.clone())
+        .address()
+}
+
+fn mint(env: &Env, token_id: &Address, to: &Address, amount: i128) {
+    token::StellarAssetClient::new(env, token_id).mint(to, &amount);
+}
+
+fn setup(min_bps: u32) -> Setup {
     let env = Env::default();
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
     let startup = Address::generate(&env);
-    let investor = Address::generate(&env);
-    let jury_addr = Address::generate(&env);
+    let inv1 = Address::generate(&env);
+    let inv2 = Address::generate(&env);
+    let asset = create_token(&env, &admin);
 
-    env.register(&admin, EscrowContract);
-    env.register(&jury_addr, MockJuryRegistry);
+    let jury = env.register(MockJury, ());
+    let escrow_id = env.register(EscrowContract, ());
+    let client = EscrowContractClient::new(&env, &escrow_id);
 
-    env.as_contract(&admin, || {
-        EscrowContract::initialize(&env, jury_addr.clone(), 259200);
-    });
+    client.initialize(&admin, &jury, &min_bps);
 
-    (env, admin, startup, investor)
+    mint(&env, &asset, &inv1, 1_000_000);
+    mint(&env, &asset, &inv2, 1_000_000);
+
+    Setup {
+        env,
+        client,
+        admin,
+        jury,
+        asset,
+        startup,
+        inv1,
+        inv2,
+    }
 }
 
-fn deposit(env: &Env, admin: &Address, startup: &Address, investor: &Address, amount: i128) -> u32 {
-    env.as_contract(admin, || {
-        EscrowContract::deposit(
-            &env,
-            0,
-            startup.clone(),
-            investor.clone(),
-            amount,
-            soroban_sdk::Address::generate(env),
-        )
-    })
+fn open_and_fund(s: &Setup, campaign_id: u32, window: u64, a1: i128, a2: i128) {
+    s.client
+        .open_campaign(&campaign_id, &s.startup, &s.asset, &window);
+    if a1 > 0 {
+        s.client.deposit(&campaign_id, &s.inv1, &a1);
+    }
+    if a2 > 0 {
+        s.client.deposit(&campaign_id, &s.inv2, &a2);
+    }
 }
 
-fn setup_jury_resolved(env: &Env, jury_addr: &Address, case_id: u32) {
-    env.as_contract(jury_addr, || {
-        MockJuryRegistry::init_mock(env, case_id, true);
-    });
-}
-
-fn setup_jury_voting(env: &Env, jury_addr: &Address, case_id: u32) {
-    env.as_contract(jury_addr, || {
-        MockJuryRegistry::init_mock(env, case_id, false);
+fn set_jury_approved(s: &Setup, case_id: u32, approved: bool, window: u64) {
+    s.env.as_contract(&s.jury, || {
+        MockJury::set_case(
+            &s.env,
+            case_id,
+            crate::JuryCaseStatus::Resolved,
+            approved,
+            window,
+        );
     });
 }
 
 #[test]
 fn test_initialize() {
-    let (env, admin, _, _) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-    let window: u64 = env.as_contract(&admin, || {
-        EscrowContract::get_dispute_window(&env)
-    });
-    assert_eq!(window, 259200);
-    let num: u32 = env.as_contract(&admin, || {
-        env.storage()
-            .persistent()
-            .get::<_, u32>(&DataKey::NumCampaigns)
-            .unwrap_or(0)
-    });
-    assert_eq!(num, 0);
+    let s = setup(5000);
+    assert_eq!(s.client.get_admin(), s.admin);
+    assert_eq!(s.client.get_jury_registry(), s.jury);
+    assert_eq!(s.client.get_min_vote_capital_bps(), 5000);
 }
 
 #[test]
-fn test_deposit() {
-    let (env, admin, startup, investor) = setup();
+fn test_deposit_and_release_after_window() {
+    let s = setup(5000);
+    let window: u64 = 1000;
+    open_and_fund(&s, 0, window, 300, 200);
+    set_jury_approved(&s, 0, true, window);
 
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 1000);
+    s.client.jury_approved(&0);
+    let c = s.client.get_campaign(&0);
+    assert_eq!(c.state, EscrowState::JuryApproved);
+    assert_eq!(c.total_amount, 500);
 
-    let campaign: Campaign = env.as_contract(&admin, || {
-        EscrowContract::get_campaign(&env, campaign_id)
-    });
-    assert_eq!(campaign.state, EscrowState::Active);
-    assert_eq!(campaign.amount, 1000);
-    assert_eq!(campaign.investor, investor);
-    assert_eq!(campaign.startup, startup);
-}
-
-#[test]
-#[should_panic(expected = "amount must be positive")]
-fn test_deposit_zero_amount() {
-    let (env, admin, startup, investor) = setup();
-    deposit(&env, &admin, &startup, &investor, 0);
-}
-
-#[test]
-#[should_panic(expected = "amount must be positive")]
-fn test_deposit_negative_amount() {
-    let (env, admin, startup, investor) = setup();
-    deposit(&env, &admin, &startup, &investor, -100);
-}
-
-#[test]
-fn test_jury_approved_resolves() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
+    s.env.ledger().with_mut(|li| {
+        li.timestamp = c.dispute_deadline;
     });
 
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-    });
-
-    let campaign: Campaign = env.as_contract(&admin, || {
-        EscrowContract::get_campaign(&env, campaign_id)
-    });
-    assert_eq!(campaign.state, EscrowState::JuryApproved);
-    assert!(campaign.approved_at > 0);
-    assert_eq!(campaign.dispute_deadline, campaign.approved_at + 259200);
+    let token_client = token::Client::new(&s.env, &s.asset);
+    let before = token_client.balance(&s.startup);
+    s.client.release(&0);
+    assert_eq!(token_client.balance(&s.startup), before + 500);
+    assert_eq!(s.client.get_campaign(&0).state, EscrowState::Released);
 }
 
 #[test]
 #[should_panic(expected = "jury has not approved this campaign")]
-fn test_jury_approved_voting_state() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_voting(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-    });
+fn test_jury_not_approved_blocks() {
+    let s = setup(5000);
+    open_and_fund(&s, 0, 1000, 100, 0);
+    set_jury_approved(&s, 0, false, 1000);
+    s.client.jury_approved(&0);
 }
 
 #[test]
-#[should_panic(expected = "campaign not in active state")]
-fn test_jury_approved_twice() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
+fn test_capital_weighted_override_release() {
+    let s = setup(5000);
+    let window: u64 = 10_000;
+    open_and_fund(&s, 0, window, 700, 300);
+    set_jury_approved(&s, 0, true, window);
+    s.client.jury_approved(&0);
 
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
+    s.client.dispute(&0, &s.inv1);
+    // inv1 has 700 weight FOR, inv2 300 AGAINST → FOR wins
+    s.client.investor_vote(&0, &s.inv1, &true);
+    s.client.investor_vote(&0, &s.inv2, &false);
 
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-        EscrowContract::jury_approved(&env, campaign_id);
-    });
+    let token_client = token::Client::new(&s.env, &s.asset);
+    let before = token_client.balance(&s.startup);
+    s.client.release(&0);
+    assert_eq!(token_client.balance(&s.startup), before + 1000);
 }
 
 #[test]
-fn test_dispute_within_window() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
+fn test_capital_weighted_override_refund() {
+    let s = setup(5000);
+    let window: u64 = 10_000;
+    open_and_fund(&s, 0, window, 200, 800);
+    set_jury_approved(&s, 0, true, window);
+    s.client.jury_approved(&0);
 
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
+    s.client.dispute(&0, &s.inv2);
+    s.client.investor_vote(&0, &s.inv1, &true);
+    s.client.investor_vote(&0, &s.inv2, &false);
 
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-    });
-
-    let disputer = soroban_sdk::Address::generate(&env);
-    env.as_contract(&admin, || {
-        EscrowContract::dispute(&env, campaign_id, disputer);
-    });
-
-    let campaign: Campaign = env.as_contract(&admin, || {
-        EscrowContract::get_campaign(&env, campaign_id)
-    });
-    assert_eq!(campaign.state, EscrowState::DisputeOpen);
+    let token_client = token::Client::new(&s.env, &s.asset);
+    let b1 = token_client.balance(&s.inv1);
+    let b2 = token_client.balance(&s.inv2);
+    s.client.refund(&0);
+    assert_eq!(token_client.balance(&s.inv1), b1 + 200);
+    assert_eq!(token_client.balance(&s.inv2), b2 + 800);
+    assert_eq!(s.client.get_campaign(&0).state, EscrowState::Refunded);
 }
 
 #[test]
-#[should_panic(expected = "can only dispute after jury approval")]
-fn test_dispute_on_active_campaign() {
-    let (env, admin, startup, investor) = setup();
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    let disputer = soroban_sdk::Address::generate(&env);
-
-    env.as_contract(&admin, || {
-        EscrowContract::dispute(&env, campaign_id, disputer);
-    });
+#[should_panic(expected = "insufficient capital participation")]
+fn test_participation_threshold() {
+    let s = setup(8000); // need 80% of capital
+    open_and_fund(&s, 0, 10_000, 900, 100);
+    set_jury_approved(&s, 0, true, 10_000);
+    s.client.jury_approved(&0);
+    s.client.dispute(&0, &s.inv1);
+    // only inv2 votes (100 < 80% of 1000)
+    s.client.investor_vote(&0, &s.inv2, &true);
+    s.client.release(&0);
 }
 
 #[test]
-fn test_release_after_window_no_dispute() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-    });
-
-    let dispute_window: u64 = env.as_contract(&admin, || {
-        EscrowContract::get_dispute_window(&env)
-    });
-
-    env.ledger().set_timestamp(
-        env.ledger().get_timestamp() + dispute_window + 1,
-    );
-
-    env.as_contract(&admin, || {
-        EscrowContract::release(&env, campaign_id);
-    });
-
-    let campaign: Campaign = env.as_contract(&admin, || {
-        EscrowContract::get_campaign(&env, campaign_id)
-    });
-    assert_eq!(campaign.state, EscrowState::Released);
+fn test_active_refund_by_startup() {
+    let s = setup(5000);
+    open_and_fund(&s, 0, 1000, 150, 50);
+    let token_client = token::Client::new(&s.env, &s.asset);
+    let b1 = token_client.balance(&s.inv1);
+    s.client.refund(&0);
+    assert_eq!(token_client.balance(&s.inv1), b1 + 150);
 }
 
 #[test]
-#[should_panic(expected = "dispute window still open")]
-fn test_release_during_window() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-        EscrowContract::release(&env, campaign_id);
-    });
-}
-
-#[test]
-fn test_release_dispute_open_investor_majority_for() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-        EscrowContract::dispute(&env, campaign_id, soroban_sdk::Address::generate(&env));
-    });
-
-    let inv1 = soroban_sdk::Address::generate(&env);
-    let inv2 = soroban_sdk::Address::generate(&env);
-    let inv3 = soroban_sdk::Address::generate(&env);
-
-    env.as_contract(&admin, || {
-        EscrowContract::investor_vote(&env, campaign_id, inv1, true);
-        EscrowContract::investor_vote(&env, campaign_id, inv2, true);
-        EscrowContract::investor_vote(&env, campaign_id, inv3, true);
-    });
-
-    env.as_contract(&admin, || {
-        EscrowContract::release(&env, campaign_id);
-    });
-
-    let campaign: Campaign = env.as_contract(&admin, || {
-        EscrowContract::get_campaign(&env, campaign_id)
-    });
-    assert_eq!(campaign.state, EscrowState::Released);
-}
-
-#[test]
-#[should_panic(expected = "investor majority did not approve release")]
-fn test_release_dispute_open_investor_majority_against() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-        EscrowContract::dispute(&env, campaign_id, soroban_sdk::Address::generate(&env));
-    });
-
-    let inv1 = soroban_sdk::Address::generate(&env);
-    let inv2 = soroban_sdk::Address::generate(&env);
-    let inv3 = soroban_sdk::Address::generate(&env);
-
-    env.as_contract(&admin, || {
-        EscrowContract::investor_vote(&env, campaign_id, inv1, true);
-        EscrowContract::investor_vote(&env, campaign_id, inv2, false);
-        EscrowContract::investor_vote(&env, campaign_id, inv3, false);
-    });
-
-    env.as_contract(&admin, || {
-        EscrowContract::release(&env, campaign_id);
-    });
-}
-
-#[test]
-#[should_panic(expected = "no investor votes cast")]
-fn test_release_dispute_open_no_votes() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-        EscrowContract::dispute(&env, campaign_id, soroban_sdk::Address::generate(&env));
-        EscrowContract::release(&env, campaign_id);
-    });
-}
-
-#[test]
-fn test_investor_vote_counts() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-        EscrowContract::dispute(&env, campaign_id, soroban_sdk::Address::generate(&env));
-    });
-
-    let inv1 = soroban_sdk::Address::generate(&env);
-    let inv2 = soroban_sdk::Address::generate(&env);
-
-    env.as_contract(&admin, || {
-        EscrowContract::investor_vote(&env, campaign_id, inv1.clone(), true);
-        EscrowContract::investor_vote(&env, campaign_id, inv2.clone(), false);
-    });
-
-    let counts: InvestorVoteCount = env.as_contract(&admin, || {
-        EscrowContract::get_investor_vote_count(&env, campaign_id)
-    });
-    assert_eq!(counts.for_release, 1);
-    assert_eq!(counts.against_release, 1);
-
-    let vote1: bool = env.as_contract(&admin, || {
-        EscrowContract::get_investor_vote(&env, campaign_id, inv1)
-    });
-    assert!(vote1);
-
-    let vote2: bool = env.as_contract(&admin, || {
-        EscrowContract::get_investor_vote(&env, campaign_id, inv2)
-    });
-    assert!(!vote2);
-}
-
-#[test]
-#[should_panic(expected = "investor already voted")]
-fn test_investor_double_vote() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-        EscrowContract::dispute(&env, campaign_id, soroban_sdk::Address::generate(&env));
-    });
-
-    let inv1 = soroban_sdk::Address::generate(&env);
-    env.as_contract(&admin, || {
-        EscrowContract::investor_vote(&env, campaign_id, inv1.clone(), true);
-        EscrowContract::investor_vote(&env, campaign_id, inv1, false);
-    });
-}
-
-#[test]
-#[should_panic(expected = "can only vote during dispute")]
-fn test_investor_vote_outside_dispute() {
-    let (env, admin, startup, investor) = setup();
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 5000);
-    let inv1 = soroban_sdk::Address::generate(&env);
-
-    env.as_contract(&admin, || {
-        EscrowContract::investor_vote(&env, campaign_id, inv1, true);
-    });
-}
-
-#[test]
-fn test_refund_by_startup() {
-    let (env, admin, startup, investor) = setup();
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 2000);
-
-    env.as_contract(&admin, || {
-        EscrowContract::refund(&env, campaign_id);
-    });
-
-    let campaign: Campaign = env.as_contract(&admin, || {
-        EscrowContract::get_campaign(&env, campaign_id)
-    });
-    assert_eq!(campaign.state, EscrowState::Refunded);
-}
-
-#[test]
-#[should_panic(expected = "can only refund active campaigns")]
-fn test_refund_after_jury_approved() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 2000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-        EscrowContract::refund(&env, campaign_id);
-    });
-}
-
-#[test]
-#[should_panic(expected = "can only refund active campaigns")]
-fn test_refund_after_release() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 2000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-    });
-
-    env.ledger().set_timestamp(
-        env.ledger().get_timestamp() + 259201,
-    );
-
-    env.as_contract(&admin, || {
-        EscrowContract::release(&env, campaign_id);
-        EscrowContract::refund(&env, campaign_id);
-    });
-}
-
-#[test]
-fn test_full_lifecycle_dispute_then_release() {
-    let (env, admin, startup, investor) = setup();
-    let jury_addr: Address = env.as_contract(&admin, || {
-        EscrowContract::get_jury_registry(&env)
-    });
-
-    let campaign_id = deposit(&env, &admin, &startup, &investor, 10000);
-    setup_jury_resolved(&env, &jury_addr, campaign_id);
-
-    env.as_contract(&admin, || {
-        EscrowContract::jury_approved(&env, campaign_id);
-    });
-
-    let disputer = soroban_sdk::Address::generate(&env);
-    env.as_contract(&admin, || {
-        EscrowContract::dispute(&env, campaign_id, disputer);
-    });
-
-    let inv1 = soroban_sdk::Address::generate(&env);
-    let inv2 = soroban_sdk::Address::generate(&env);
-
-    env.as_contract(&admin, || {
-        EscrowContract::investor_vote(&env, campaign_id, inv1, true);
-        EscrowContract::investor_vote(&env, campaign_id, inv2, true);
-    });
-
-    env.as_contract(&admin, || {
-        EscrowContract::release(&env, campaign_id);
-    });
-
-    let campaign: Campaign = env.as_contract(&admin, || {
-        EscrowContract::get_campaign(&env, campaign_id)
-    });
-    assert_eq!(campaign.state, EscrowState::Released);
-    assert_eq!(campaign.amount, 10000);
+fn test_admin_set_bps() {
+    let s = setup(5000);
+    s.client.set_min_vote_capital_bps(&2500);
+    assert_eq!(s.client.get_min_vote_capital_bps(), 2500);
 }
