@@ -1,6 +1,13 @@
 import type { RequestHandler } from "express";
-import { UnauthorizedError } from "../lib/errors.js";
+import { UnauthorizedError, ForbiddenError } from "../lib/errors.js";
+import type { UserRole } from "../lib/roles.js";
+import { clientIp, deviceFingerprint } from "../lib/request-meta.js";
+import { config } from "../config.js";
 import * as authService from "../services/auth.service.js";
+import * as userRepo from "../repositories/user.repository.js";
+import * as authEventRepo from "../repositories/auth-event.repository.js";
+import { decryptMfaSecret, verifyTotp } from "../lib/mfa.js";
+import { checkRoleCheckBurst } from "../services/anomaly.service.js";
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
@@ -44,8 +51,6 @@ export const optionalAuth: RequestHandler = async (req, res, next) => {
     next();
   }
 };
-<<<<<<< Updated upstream
-=======
 
 export function requireRole(...roles: UserRole[]): RequestHandler {
   return async (req, res, next) => {
@@ -180,4 +185,3 @@ export function assertResourceOwner(
   }
   throw new ForbiddenError("Not authorized for this resource");
 }
->>>>>>> Stashed changes
