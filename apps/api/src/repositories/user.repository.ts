@@ -115,6 +115,20 @@ export async function setMfaSecret(
   });
 }
 
+export async function searchUsers(q: string, limit = 20): Promise<UserRecord[]> {
+  return prisma.user.findMany({
+    where: {
+      OR: [
+        { wallet: { contains: q } },
+        { email: { contains: q, mode: "insensitive" } },
+        { displayName: { contains: q, mode: "insensitive" } },
+      ],
+    },
+    take: limit,
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 export async function enableMfa(userId: string): Promise<UserRecord> {
   return prisma.user.update({
     where: { id: userId },

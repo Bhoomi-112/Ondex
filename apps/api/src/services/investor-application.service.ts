@@ -23,6 +23,12 @@ export async function applyAsInvestor(
     aum?: string;
     sourceOfFunds?: string;
     portfolioDesc?: string;
+    experienceLevel?: string;
+    companiesInvested?: string;
+    sectorFocus?: string;
+    investmentRange?: string;
+    previousPortfolio?: string;
+    referralSource?: string;
   },
 ) {
   const user = await userRepo.findById(userId);
@@ -56,6 +62,12 @@ export async function applyAsInvestor(
     aum: sanitizeOptional(data.aum, 200),
     sourceOfFunds: sanitizeOptional(data.sourceOfFunds, 200),
     portfolioDesc: sanitizeOptional(data.portfolioDesc, 2000),
+    experienceLevel: sanitizeOptional(data.experienceLevel, 50),
+    companiesInvested: sanitizeOptional(data.companiesInvested, 50),
+    sectorFocus: sanitizeOptional(data.sectorFocus, 500),
+    investmentRange: sanitizeOptional(data.investmentRange, 200),
+    previousPortfolio: sanitizeOptional(data.previousPortfolio, 2000),
+    referralSource: sanitizeOptional(data.referralSource, 200),
   });
 
   log.info({ userId, applicationId: application.id }, "Investor application created");

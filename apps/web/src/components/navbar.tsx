@@ -26,6 +26,7 @@ const ROLE_NAV: Record<UserRole, Array<{ href: string; label: string }>> = {
 };
 
 const GUEST_LINKS = [
+  { href: "/how-it-works", label: "How It Works" },
   { href: "/for/startups", label: "Startups" },
   { href: "/for/jury", label: "Jury" },
   { href: "/for/investors", label: "Investors" },

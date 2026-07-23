@@ -9,6 +9,12 @@ export async function create(data: {
   aum?: string | null;
   sourceOfFunds?: string | null;
   portfolioDesc?: string | null;
+  experienceLevel?: string | null;
+  companiesInvested?: string | null;
+  sectorFocus?: string | null;
+  investmentRange?: string | null;
+  previousPortfolio?: string | null;
+  referralSource?: string | null;
 }) {
   return prisma.investorApplication.create({
     data: {
@@ -20,6 +26,12 @@ export async function create(data: {
       aum: data.aum ?? null,
       sourceOfFunds: data.sourceOfFunds ?? null,
       portfolioDesc: data.portfolioDesc ?? null,
+      experienceLevel: data.experienceLevel ?? null,
+      companiesInvested: data.companiesInvested ?? null,
+      sectorFocus: data.sectorFocus ?? null,
+      investmentRange: data.investmentRange ?? null,
+      previousPortfolio: data.previousPortfolio ?? null,
+      referralSource: data.referralSource ?? null,
       status: "pending",
     },
   });

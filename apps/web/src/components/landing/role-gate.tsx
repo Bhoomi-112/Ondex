@@ -29,8 +29,8 @@ const roleCtaMap: Record<
     secondaryLabel: "Log in",
   },
   investor: {
-    href: "/apply-jury",
-    label: "Apply for Jury Access",
+    href: "/apply-investor",
+    label: "Apply as Investor",
     secondaryHref: "/login",
     secondaryLabel: "Log in",
   },

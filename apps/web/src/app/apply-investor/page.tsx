@@ -15,7 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Loader2, CheckCircle, Shield } from "lucide-react";
+import { Loader2, CheckCircle, Shield, Plus } from "lucide-react";
 
 const ENTITY_TYPES = [
   "Individual",
@@ -41,6 +41,37 @@ const SOURCE_OF_FUNDS = [
   "Other",
 ];
 
+const EXPERIENCE_LEVELS = [
+  "New to Investing",
+  "Beginner",
+  "Intermediate",
+  "Advanced",
+  "Professional",
+];
+
+const COMPANIES_INVESTED = ["0", "1–5", "6–20", "20+"];
+
+const SECTORS = [
+  "DeFi",
+  "Infrastructure",
+  "Gaming",
+  "AI / ML",
+  "Consumer",
+  "Enterprise",
+  "Social Impact",
+  "Other",
+];
+
+const REFERRAL_SOURCES = [
+  "Twitter / X",
+  "Google Search",
+  "Friend / Referral",
+  "Event / Conference",
+  "Newsletter",
+  "Podcast",
+  "Other",
+];
+
 export default function ApplyInvestorPage() {
   const { user, loginWithWallet, loading } = useAuth();
   const router = useRouter();
@@ -57,10 +88,24 @@ export default function ApplyInvestorPage() {
   const [aum, setAum] = useState("");
   const [sourceOfFunds, setSourceOfFunds] = useState("");
   const [portfolioDesc, setPortfolioDesc] = useState("");
+  const [experienceLevel, setExperienceLevel] = useState("");
+  const [companiesInvested, setCompaniesInvested] = useState("");
+  const [selectedSectors, setSelectedSectors] = useState<string[]>([]);
+  const [investmentRange, setInvestmentRange] = useState("");
+  const [previousPortfolio, setPreviousPortfolio] = useState("");
+  const [referralSource, setReferralSource] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const toggleSector = (sector: string) => {
+    setSelectedSectors((prev) =>
+      prev.includes(sector)
+        ? prev.filter((s) => s !== sector)
+        : [...prev, sector],
+    );
+  };
 
   const ensureAuth = async () => {
     if (user) return user;
@@ -80,6 +125,12 @@ export default function ApplyInvestorPage() {
         aum: aum || undefined,
         sourceOfFunds: sourceOfFunds || undefined,
         portfolioDesc: portfolioDesc || undefined,
+        experienceLevel: experienceLevel || undefined,
+        companiesInvested: companiesInvested || undefined,
+        sectorFocus: selectedSectors.length > 0 ? selectedSectors : undefined,
+        investmentRange: investmentRange || undefined,
+        previousPortfolio: previousPortfolio || undefined,
+        referralSource: referralSource || undefined,
       });
       setSuccess(true);
     } catch (err) {
@@ -224,6 +275,108 @@ export default function ApplyInvestorPage() {
                 maxLength={2000}
                 placeholder="Describe your investment focus, portfolio companies, and thesis…"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="experienceLevel">
+                Investment Experience
+              </Label>
+              <select
+                id="experienceLevel"
+                value={experienceLevel}
+                onChange={(e) => setExperienceLevel(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-text-primary"
+              >
+                <option value="">Select experience level…</option>
+                {EXPERIENCE_LEVELS.map((l) => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="companiesInvested">
+                Companies Previously Invested In
+              </Label>
+              <select
+                id="companiesInvested"
+                value={companiesInvested}
+                onChange={(e) => setCompaniesInvested(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-text-primary"
+              >
+                <option value="">Select count…</option>
+                {COMPANIES_INVESTED.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Sector Focus</Label>
+              <div className="flex flex-wrap gap-2">
+                {SECTORS.map((sector) => {
+                  const active = selectedSectors.includes(sector);
+                  return (
+                    <button
+                      key={sector}
+                      type="button"
+                      onClick={() => toggleSector(sector)}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        active
+                          ? "border-lavender bg-lavender/10 text-lavender"
+                          : "border-border text-text-secondary hover:border-text-muted"
+                      }`}
+                    >
+                      {active && <Plus className="mr-1 inline h-3 w-3" />}
+                      {sector}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="investmentRange">
+                Preferred Investment Range
+              </Label>
+              <Input
+                id="investmentRange"
+                value={investmentRange}
+                onChange={(e) => setInvestmentRange(e.target.value)}
+                maxLength={200}
+                placeholder="e.g. $10K–$100K per deal"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="previousPortfolio">
+                Previous Portfolio Companies (optional)
+              </Label>
+              <textarea
+                id="previousPortfolio"
+                className="flex min-h-[80px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-text-primary"
+                value={previousPortfolio}
+                onChange={(e) => setPreviousPortfolio(e.target.value)}
+                maxLength={2000}
+                placeholder="List any companies you've invested in before…"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="referralSource">
+                How Did You Hear About Ondex?
+              </Label>
+              <select
+                id="referralSource"
+                value={referralSource}
+                onChange={(e) => setReferralSource(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-text-primary"
+              >
+                <option value="">Select source…</option>
+                {REFERRAL_SOURCES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
             </div>
 
             {error && (

@@ -38,7 +38,7 @@ import {
 } from "../../lib/mfa.js";
 import * as authService from "../../services/auth.service.js";
 import * as juryAppService from "../../services/jury-application.service.js";
-import * as founderAppService from "../../services/founder-application.service.js";
+import * as applicationService from "../../services/application.service.js";
 import * as investorAppService from "../../services/investor-application.service.js";
 import * as userRepo from "../../repositories/user.repository.js";
 import * as authEventRepo from "../../repositories/auth-event.repository.js";
@@ -259,13 +259,27 @@ authedRouter.post(
 
 authedRouter.get("/founder/status", requireAuth, async (req, res) => {
   const userId = res.locals.userId as string;
-  const application = await founderAppService.getApplicationStatus(userId);
+  const application = await applicationService.getApplicationStatus(userId);
   res.json({ application });
 });
 
+const milestoneSchema = z.object({
+  description: z.string().min(1).max(2000),
+  amount: z.union([z.string(), z.number()]),
+});
+
 const founderApplySchema = z.object({
-  pitch: z.string().min(20).max(5000),
+  name: z.string().min(1).max(200),
+  pitch: z.string().min(20).max(10000),
+  askAmount: z.union([z.string(), z.number()]),
   experience: z.string().max(2000).optional(),
+  website: z.string().max(500).optional(),
+  socials: z.object({
+    twitter: z.string().max(200).optional(),
+    github: z.string().max(200).optional(),
+    linkedin: z.string().max(200).optional(),
+  }).optional(),
+  milestones: z.array(milestoneSchema).optional(),
 });
 
 authedRouter.post(
@@ -273,17 +287,30 @@ authedRouter.post(
   requireAuth,
   validate(founderApplySchema, "body"),
   async (req, res) => {
-    const body = pickAllowed<{ pitch: string; experience?: string }>(
-      req.body,
-      ["pitch", "experience"],
-    );
-    const application = await founderAppService.applyAsFounder(
+    const body = pickAllowed<{
+      name: string;
+      pitch: string;
+      askAmount: string | number;
+      experience?: string;
+      website?: string;
+      socials?: Record<string, string>;
+      milestones?: Array<{ description: string; amount: string | number }>;
+    }>(req.body, ["name", "pitch", "askAmount", "experience", "website", "socials", "milestones"]);
+    const application = await applicationService.applyAsFounder(
       res.locals.userId as string,
       {
-        pitch: sanitizeText(body.pitch ?? "", 5000),
+        name: sanitizeText(body.name ?? "", 200),
+        pitch: sanitizeText(body.pitch ?? "", 10000),
+        askAmount: BigInt(String(body.askAmount ?? 0)),
         experience: body.experience
           ? sanitizeText(body.experience, 2000)
           : undefined,
+        website: body.website,
+        socials: body.socials,
+        milestones: (body.milestones || []).map((m) => ({
+          description: sanitizeText(m.description, 2000),
+          amount: BigInt(String(m.amount ?? 0)),
+        })),
       },
     );
     res.status(201).json({ application });
@@ -298,7 +325,7 @@ authedRouter.get(
   async (req, res) => {
     const status =
       typeof req.query.status === "string" ? req.query.status : undefined;
-    const items = await founderAppService.listApplications(
+    const items = await applicationService.listApplications(
       res.locals.wallet as string,
       status,
     );
@@ -310,8 +337,8 @@ authedRouter.post(
   "/jury/founder-applications/:id/approve",
   requireAuth,
   async (req, res) => {
-    const id = String(req.params.id);
-    const result = await founderAppService.approveApplication(
+    const id = Number(req.params.id);
+    const result = await applicationService.approveApplication(
       res.locals.wallet as string,
       id,
       {
@@ -332,9 +359,9 @@ authedRouter.post(
   requireAuth,
   validate(founderRejectSchema, "body"),
   async (req, res) => {
-    const id = String(req.params.id);
+    const id = Number(req.params.id);
     const body = pickAllowed<{ reason?: string }>(req.body, ["reason"]);
-    const result = await founderAppService.rejectApplication(
+    const result = await applicationService.rejectApplication(
       res.locals.wallet as string,
       id,
       body.reason ? sanitizeText(body.reason, 500) : undefined,
@@ -376,6 +403,12 @@ authedRouter.post(
       aum?: string;
       sourceOfFunds?: string;
       portfolioDesc?: string;
+      experienceLevel?: string;
+      companiesInvested?: string;
+      sectorFocus?: string;
+      investmentRange?: string;
+      previousPortfolio?: string;
+      referralSource?: string;
     }>(req.body, [
       "fullName",
       "entityType",
@@ -383,6 +416,12 @@ authedRouter.post(
       "aum",
       "sourceOfFunds",
       "portfolioDesc",
+      "experienceLevel",
+      "companiesInvested",
+      "sectorFocus",
+      "investmentRange",
+      "previousPortfolio",
+      "referralSource",
     ]);
     const application = await investorAppService.applyAsInvestor(
       res.locals.userId as string,
@@ -400,6 +439,24 @@ authedRouter.post(
           : undefined,
         portfolioDesc: body.portfolioDesc
           ? sanitizeText(body.portfolioDesc, 2000)
+          : undefined,
+        experienceLevel: body.experienceLevel
+          ? sanitizeText(body.experienceLevel, 50)
+          : undefined,
+        companiesInvested: body.companiesInvested
+          ? sanitizeText(body.companiesInvested, 50)
+          : undefined,
+        sectorFocus: body.sectorFocus
+          ? sanitizeText(body.sectorFocus, 500)
+          : undefined,
+        investmentRange: body.investmentRange
+          ? sanitizeText(body.investmentRange, 200)
+          : undefined,
+        previousPortfolio: body.previousPortfolio
+          ? sanitizeText(body.previousPortfolio, 2000)
+          : undefined,
+        referralSource: body.referralSource
+          ? sanitizeText(body.referralSource, 200)
           : undefined,
       },
     );
@@ -594,6 +651,71 @@ authedRouter.post(
   requireAdmin,
   requireAdminMfa,
   validate(adminRoleSchema, "body"),
+  async (req, res) => {
+    const targetUserId = String(req.params.userId);
+    const { role } = req.body as { role: "founder" | "jury" | "investor" };
+    const updated = await authService.adminChangeRole(
+      res.locals.userId as string,
+      res.locals.wallet as string,
+      targetUserId,
+      role,
+      clientIp(req),
+    );
+    res.json({
+      user: {
+        id: updated.id,
+        role: updated.role,
+        onboardingStatus: updated.onboardingStatus,
+      },
+    });
+  },
+);
+
+// ── Admin panel endpoints (wallet-gated, no MFA required) ──────────
+
+authedRouter.get(
+  "/admin/check",
+  requireAuth,
+  async (req, res) => {
+    const wallet = res.locals.wallet as string | null;
+    const isAdmin = !!wallet && wallet === config.adminAddress;
+    res.json({ isAdmin });
+  },
+);
+
+authedRouter.get(
+  "/admin/users",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!q || q.length < 2) {
+      return res.json({ users: [] });
+    }
+    const users = await userRepo.searchUsers(q);
+    res.json({
+      users: users.map((u) => ({
+        id: u.id,
+        wallet: u.wallet,
+        email: u.email,
+        displayName: u.displayName,
+        role: u.role,
+        onboardingStatus: u.onboardingStatus,
+        createdAt: u.createdAt,
+      })),
+    });
+  },
+);
+
+const adminRoleAssignSchema = z.object({
+  role: z.enum(["founder", "jury", "investor"]),
+});
+
+authedRouter.post(
+  "/admin/users/:userId/role-assign",
+  requireAuth,
+  requireAdmin,
+  validate(adminRoleAssignSchema, "body"),
   async (req, res) => {
     const targetUserId = String(req.params.userId);
     const { role } = req.body as { role: "founder" | "jury" | "investor" };

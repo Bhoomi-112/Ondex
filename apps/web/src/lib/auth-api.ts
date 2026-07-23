@@ -191,20 +191,28 @@ export async function fetchJuryStatus() {
 export async function fetchFounderStatus() {
   return authFetch<{
     application: {
-      id: string;
+      id: number;
       status: "pending" | "approved" | "rejected";
       createdAt: string;
       reviewedAt: string | null;
       rejectReason: string | null;
+      name: string;
+      pitch: string;
+      askAmount: string;
     } | null;
   }>("/api/v1/auth/founder/status");
 }
 
 export async function applyAsFounder(data: {
+  name: string;
   pitch: string;
+  askAmount: string;
   experience?: string;
+  website?: string;
+  socials?: Record<string, string>;
+  milestones?: Array<{ description: string; amount: string }>;
 }) {
-  return authFetch<{ application: { id: string; status: string } }>(
+  return authFetch<{ application: { id: number; status: string } }>(
     "/api/v1/auth/founder/apply",
     {
       method: "POST",
@@ -217,29 +225,34 @@ export async function listFounderApplications(status?: string) {
   const q = status ? `?status=${encodeURIComponent(status)}` : "";
   return authFetch<{
     items: Array<{
-      id: string;
+      id: number;
       wallet: string;
       status: string;
+      name: string;
       pitch: string;
+      askAmount: string;
       experience: string | null;
+      website: string | null;
+      socials: string | null;
       createdAt: string;
-      user: { id: string; displayName: string | null };
+      milestones: Array<{ id: number; description: string; amount: string; idx: number }>;
+      user: { id: string; displayName: string | null; wallet: string | null };
     }>;
   }>(`/api/v1/auth/jury/founder-applications${q}`);
 }
 
-export async function approveFounderApplication(id: string) {
-  return authFetch<{ applicationId: string; user: AuthUser }>(
+export async function approveFounderApplication(id: number) {
+  return authFetch<{ applicationId: number; user: AuthUser }>(
     `/api/v1/auth/jury/founder-applications/${id}/approve`,
     { method: "POST", body: "{}" },
   );
 }
 
 export async function rejectFounderApplication(
-  id: string,
+  id: number,
   reason: string | undefined,
 ) {
-  return authFetch<{ application: { id: string; status: string } }>(
+  return authFetch<{ application: { id: number; status: string } }>(
     `/api/v1/auth/jury/founder-applications/${id}/reject`,
     {
       method: "POST",
@@ -260,6 +273,65 @@ export async function fetchInvestorStatus() {
   }>("/api/v1/auth/investor/status");
 }
 
+export async function checkAdminStatus() {
+  return authFetch<{ isAdmin: boolean }>("/api/v1/auth/admin/check");
+}
+
+export async function listInvestorApplications(status?: string) {
+  const q = status ? `?status=${encodeURIComponent(status)}` : "";
+  return authFetch<{
+    items: Array<{
+      id: string;
+      wallet: string;
+      status: string;
+      fullName: string;
+      entityType: string | null;
+      aum: string | null;
+      sourceOfFunds: string | null;
+      portfolioDesc: string | null;
+      createdAt: string;
+      user: { id: string; displayName: string | null };
+    }>;
+  }>(`/api/v1/auth/admin/investor-applications${q}`);
+}
+
+export async function approveInvestorApplication(id: string) {
+  return authFetch<{ applicationId: string; user: AuthUser }>(
+    `/api/v1/auth/admin/investor-applications/${id}/approve`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export async function rejectInvestorApplication(id: string, reason?: string) {
+  return authFetch<{ application: { id: string; status: string } }>(
+    `/api/v1/auth/admin/investor-applications/${id}/reject`,
+    { method: "POST", body: JSON.stringify({ reason }) },
+  );
+}
+
+export async function searchUsers(q: string) {
+  return authFetch<{
+    users: Array<{
+      id: string;
+      wallet: string | null;
+      email: string | null;
+      displayName: string | null;
+      role: string | null;
+      onboardingStatus: string;
+      createdAt: string;
+    }>;
+  }>(`/api/v1/auth/admin/users?q=${encodeURIComponent(q)}`);
+}
+
+export async function adminAssignRole(userId: string, role: "founder" | "jury" | "investor") {
+  return authFetch<{
+    user: { id: string; role: string; onboardingStatus: string };
+  }>(`/api/v1/auth/admin/users/${userId}/role-assign`, {
+    method: "POST",
+    body: JSON.stringify({ role }),
+  });
+}
+
 export async function applyAsInvestor(data: {
   fullName: string;
   entityType?: string;
@@ -267,12 +339,21 @@ export async function applyAsInvestor(data: {
   aum?: string;
   sourceOfFunds?: string;
   portfolioDesc?: string;
+  experienceLevel?: string;
+  companiesInvested?: string;
+  sectorFocus?: string[];
+  investmentRange?: string;
+  previousPortfolio?: string;
+  referralSource?: string;
 }) {
   return authFetch<{ application: { id: string; status: string } }>(
     "/api/v1/auth/investor/apply",
     {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        ...data,
+        sectorFocus: data.sectorFocus?.join(", "),
+      }),
     },
   );
 }
