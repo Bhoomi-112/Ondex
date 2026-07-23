@@ -46,14 +46,11 @@ router.get("", requireAuth, async (req, res) => {
   const role = res.locals.role as string | null;
 
   if (startup) {
-    // IDOR: founders may only list their own; jury/admin may list any
-    if (role === "founder") {
+    // IDOR: only own startups or jury/admin may list any
+    if (role !== "jury") {
       if (!sessionWallet || startup !== sessionWallet) {
         throw new ForbiddenError("Not authorized for this resource");
       }
-    } else if (role !== "jury" && role !== "investor") {
-      // investors see public listings only via listPending path without filter
-      throw new ForbiddenError("Not authorized for this resource");
     }
     const apps = await applicationService.listByStartup(startup);
     return res.json({ applications: apps });
@@ -85,7 +82,7 @@ router.get(
 router.post(
   "",
   requireAuth,
-  requireRole("founder"),
+  requireRole("jury"),
   validate(createSchema, "body"),
   async (req, res) => {
     // Mass-assignment: never accept role/isAdmin/startup from client as authority

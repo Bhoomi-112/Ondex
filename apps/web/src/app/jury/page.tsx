@@ -42,6 +42,11 @@ import {
   appId as resolveAppId,
   type ApiApplication,
 } from "@/lib/api";
+import {
+  listFounderApplications,
+  approveFounderApplication,
+  rejectFounderApplication,
+} from "@/lib/auth-api";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
 import { stroopsToXLM as toXlm } from "@/lib/utils";
 
@@ -77,6 +82,13 @@ export default function JuryDashboard() {
   const [txError, setTxError] = useState<string | undefined>();
   const [voteConfirmOpen, setVoteConfirmOpen] = useState(false);
   const [pendingVote, setPendingVote] = useState<{ appId: number; approve: boolean } | null>(null);
+  const [founderApps, setFounderApps] = useState<Array<{
+    id: string; wallet: string; status: string; pitch: string;
+    experience: string | null; createdAt: string;
+    user: { id: string; displayName: string | null };
+  }>>([]);
+  const [founderAppsLoading, setFounderAppsLoading] = useState(false);
+  const [founderActionId, setFounderActionId] = useState<string | null>(null);
 
   const safeJson = async (res: Response) => {
     if (!res.ok) return null;
@@ -165,6 +177,48 @@ export default function JuryDashboard() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const fetchFounderApps = useCallback(async () => {
+    setFounderAppsLoading(true);
+    try {
+      const data = await listFounderApplications("pending");
+      setFounderApps(data.items ?? []);
+    } catch {
+      setFounderApps([]);
+    } finally {
+      setFounderAppsLoading(false);
+    }
+  }, []);
+
+  const handleFounderApprove = async (id: string) => {
+    setFounderActionId(id);
+    try {
+      await approveFounderApplication(id);
+      addToast({ title: "Founder Approved", description: "Application approved successfully.", variant: "success" });
+      fetchFounderApps();
+    } catch (err: any) {
+      addToast({ title: "Approval Failed", description: err?.message || "Unknown error", variant: "error" });
+    } finally {
+      setFounderActionId(null);
+    }
+  };
+
+  const handleFounderReject = async (id: string) => {
+    setFounderActionId(id);
+    try {
+      await rejectFounderApplication(id, "Rejected by jury");
+      addToast({ title: "Founder Rejected", description: "Application rejected.", variant: "success" });
+      fetchFounderApps();
+    } catch (err: any) {
+      addToast({ title: "Rejection Failed", description: err?.message || "Unknown error", variant: "error" });
+    } finally {
+      setFounderActionId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isJuror) fetchFounderApps();
+  }, [isJuror, fetchFounderApps]);
 
   const handleVote = async (caseId: number, approve: boolean) => {
     if (!address) return;
@@ -457,6 +511,9 @@ export default function JuryDashboard() {
           <TabsTrigger value="history">
             My Votes ({myVotes.length})
           </TabsTrigger>
+          <TabsTrigger value="founders" onClick={() => fetchFounderApps()}>
+            Founder Applications ({founderApps.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="space-y-4">
@@ -656,6 +713,77 @@ export default function JuryDashboard() {
                     <span className="text-xs text-text-muted">
                       {timeAgo(vote.timestamp)}
                     </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="founders" className="space-y-4">
+          {founderAppsLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-40 w-full" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ) : founderApps.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-text-primary mb-2">
+                  No Pending Founder Applications
+                </h3>
+                <p className="text-text-secondary">
+                  All founder applications have been reviewed.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            founderApps.map((app) => (
+              <Card key={app.id}>
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle>{app.user?.displayName || "Anonymous Founder"}</CardTitle>
+                      <CardDescription>
+                        Applied {new Date(app.createdAt).toLocaleDateString()}
+                      </CardDescription>
+                    </div>
+                    <Badge variant="warning"><Clock className="mr-1 h-3 w-3" /> Pending</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <p className="text-sm text-text-muted mb-1">Pitch</p>
+                    <p className="text-text-primary">{app.pitch}</p>
+                  </div>
+                  {app.experience && (
+                    <div>
+                      <p className="text-sm text-text-muted mb-1">Experience</p>
+                      <p className="text-text-primary">{app.experience}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm text-text-muted mb-1">Wallet</p>
+                    <p className="text-sm font-mono text-text-secondary">{formatAddress(app.wallet)}</p>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <Button
+                      variant="success"
+                      onClick={() => handleFounderApprove(app.id)}
+                      disabled={founderActionId === app.id}
+                    >
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      {founderActionId === app.id ? "Processing..." : "Approve"}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => handleFounderReject(app.id)}
+                      disabled={founderActionId === app.id}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      {founderActionId === app.id ? "Processing..." : "Reject"}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

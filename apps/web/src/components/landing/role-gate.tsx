@@ -23,14 +23,14 @@ const roleCtaMap: Record<
   { href: string; label: string; secondaryHref: string; secondaryLabel: string }
 > = {
   founder: {
-    href: "/signup",
-    label: "Sign up as Founder",
+    href: "/apply-founder",
+    label: "Apply as Founder",
     secondaryHref: "/login",
     secondaryLabel: "Log in",
   },
   investor: {
-    href: "/signup",
-    label: "Sign up as Investor",
+    href: "/apply-jury",
+    label: "Apply for Jury Access",
     secondaryHref: "/login",
     secondaryLabel: "Log in",
   },

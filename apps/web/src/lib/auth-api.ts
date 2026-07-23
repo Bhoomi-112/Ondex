@@ -112,11 +112,8 @@ export async function logoutSession() {
   });
 }
 
-export async function selectRole(role: Exclude<UserRole, "jury">) {
-  return authFetch<{ user: AuthUser }>("/api/v1/auth/select-role", {
-    method: "POST",
-    body: JSON.stringify({ role }),
-  });
+export async function selectRole(_role: never) {
+  throw new Error("Role self-selection is disabled. Apply for jury access instead.");
 }
 
 export async function completeProfile(data: {
@@ -175,6 +172,107 @@ export async function rejectJuryApplication(
       method: "POST",
       body: JSON.stringify({ reason }),
       mfaToken,
+    },
+  );
+}
+
+export async function fetchJuryStatus() {
+  return authFetch<{
+    application: {
+      id: string;
+      status: "pending" | "approved" | "rejected";
+      createdAt: string;
+      reviewedAt: string | null;
+      rejectReason: string | null;
+    } | null;
+  }>("/api/v1/auth/jury/status");
+}
+
+export async function fetchFounderStatus() {
+  return authFetch<{
+    application: {
+      id: string;
+      status: "pending" | "approved" | "rejected";
+      createdAt: string;
+      reviewedAt: string | null;
+      rejectReason: string | null;
+    } | null;
+  }>("/api/v1/auth/founder/status");
+}
+
+export async function applyAsFounder(data: {
+  pitch: string;
+  experience?: string;
+}) {
+  return authFetch<{ application: { id: string; status: string } }>(
+    "/api/v1/auth/founder/apply",
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export async function listFounderApplications(status?: string) {
+  const q = status ? `?status=${encodeURIComponent(status)}` : "";
+  return authFetch<{
+    items: Array<{
+      id: string;
+      wallet: string;
+      status: string;
+      pitch: string;
+      experience: string | null;
+      createdAt: string;
+      user: { id: string; displayName: string | null };
+    }>;
+  }>(`/api/v1/auth/jury/founder-applications${q}`);
+}
+
+export async function approveFounderApplication(id: string) {
+  return authFetch<{ applicationId: string; user: AuthUser }>(
+    `/api/v1/auth/jury/founder-applications/${id}/approve`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export async function rejectFounderApplication(
+  id: string,
+  reason: string | undefined,
+) {
+  return authFetch<{ application: { id: string; status: string } }>(
+    `/api/v1/auth/jury/founder-applications/${id}/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    },
+  );
+}
+
+export async function fetchInvestorStatus() {
+  return authFetch<{
+    application: {
+      id: string;
+      status: "pending" | "approved" | "rejected";
+      createdAt: string;
+      reviewedAt: string | null;
+      rejectReason: string | null;
+    } | null;
+  }>("/api/v1/auth/investor/status");
+}
+
+export async function applyAsInvestor(data: {
+  fullName: string;
+  entityType?: string;
+  accreditation?: string;
+  aum?: string;
+  sourceOfFunds?: string;
+  portfolioDesc?: string;
+}) {
+  return authFetch<{ application: { id: string; status: string } }>(
+    "/api/v1/auth/investor/apply",
+    {
+      method: "POST",
+      body: JSON.stringify(data),
     },
   );
 }

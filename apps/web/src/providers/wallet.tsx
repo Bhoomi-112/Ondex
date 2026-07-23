@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { getNetworkConfig } from "@/lib/contracts";
@@ -85,10 +86,48 @@ function clearLocalWalletState(
   }
 }
 
+async function walletNameFromKit(): Promise<string> {
+  try {
+    const stateMod = await import("@creit.tech/stellar-wallets-kit/state");
+    const id = stateMod.selectedModuleId.value;
+    const wallets = stateMod.allowedWallets.value;
+    return wallets.find((w: { id: string }) => w.id === id)?.name ?? "Unknown";
+  } catch {
+    return "Unknown";
+  }
+}
+
+/**
+ * After page reload the kit loses its selectedModule.  This restores it
+ * from the wallet name we persisted in localStorage so signTransaction
+ * works without forcing the user through the modal again.
+ */
+async function restoreModuleFromStorage(storedName: string | null): Promise<void> {
+  if (!storedName) return;
+  try {
+    const StellarWalletsKit = await getKit();
+    if (StellarWalletsKit.selectedModule) return;
+    const stateMod = await import("@creit.tech/stellar-wallets-kit/state");
+    const wallets = stateMod.allowedWallets.value as Array<{
+      id: string;
+      name: string;
+    }>;
+    const match = wallets.find(
+      (w) => w.name === storedName || w.id.toLowerCase().includes(storedName.toLowerCase()),
+    );
+    if (match) {
+      StellarWalletsKit.setWallet(match.id);
+    }
+  } catch {
+    // Best-effort — will fall through to connect modal if this fails
+  }
+}
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(null);
   const [walletName, setWalletName] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const restoredRef = useRef(false);
 
   useEffect(() => {
     const storedAddress = localStorage.getItem("ondex_wallet_address");
@@ -97,21 +136,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAddress(storedAddress);
       setWalletName(storedName);
     }
-    initKit().catch((err) => {
-      console.warn("Wallet kit init deferred:", err);
-    });
+    initKit()
+      .then(() => restoreModuleFromStorage(storedName))
+      .then(() => { restoredRef.current = true; })
+      .catch((err) => {
+        console.warn("Wallet kit init deferred:", err);
+        restoredRef.current = true;
+      });
   }, []);
-
-  async function walletNameFromKit(): Promise<string> {
-    try {
-      const stateMod = await import("@creit.tech/stellar-wallets-kit/state");
-      const id = stateMod.selectedModuleId.value;
-      const wallets = stateMod.allowedWallets.value;
-      return wallets.find((w: { id: string }) => w.id === id)?.name ?? "Unknown";
-    } catch {
-      return "Unknown";
-    }
-  }
 
   const connect = useCallback(async () => {
     setIsConnecting(true);
@@ -140,7 +172,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const disconnect = useCallback(async () => {
-    // Always clear dApp session first — never block logout on kit/env init.
     clearLocalWalletState(setAddress, setWalletName);
     if (!kitReady) return;
     try {
@@ -156,11 +187,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       xdr: string,
       opts?: { networkPassphrase?: string },
     ): Promise<{ signedTxXdr: string; signerAddress: string }> => {
-      // Read address from closure OR localStorage to handle the case where
-      // loginWithWallet just connected the wallet (React hasn't re-rendered
-      // the closure yet).
       const walletAddress = address || localStorage.getItem("ondex_wallet_address");
-      if (!walletAddress) throw new Error("Wallet not connected");
+      if (!walletAddress) throw new Error("Wallet not connected — click 'Connect Wallet' first");
+
       const StellarWalletsKit = await getKit();
       let networkPassphrase = opts?.networkPassphrase;
       if (!networkPassphrase) {
@@ -171,8 +200,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Invalid challenge from server — try logging out and back in");
       }
 
+      // If no module is selected (page reload), try to restore from storage
+      if (!StellarWalletsKit.selectedModule) {
+        const storedName = localStorage.getItem("ondex_wallet_name");
+        await restoreModuleFromStorage(storedName);
+      }
+
+      const module = StellarWalletsKit.selectedModule;
+      if (!module) {
+        throw new Error(
+          "No wallet module selected. Click 'Connect Wallet' and choose your wallet.",
+        );
+      }
+
       try {
-        const module = StellarWalletsKit.selectedModule;
         const result = await module.signTransaction(xdr, {
           networkPassphrase,
         });
@@ -181,11 +222,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           signerAddress: result.signerAddress ?? walletAddress,
         };
       } catch (e: unknown) {
-        const msg = (e as { message?: string })?.message
+        const raw = (e as { message?: string })?.message
           || (typeof e === "string" && e)
           || "Wallet rejected the signing request";
-        console.error("signTransaction failed:", msg);
-        throw new Error(msg);
+        if (raw.includes("not connected") || raw.includes("denied") || raw.includes("rejected")) {
+          clearLocalWalletState(setAddress, setWalletName);
+          throw new Error(
+            `${raw}. Click 'Connect Wallet' to reconnect.`,
+          );
+        }
+        console.error("signTransaction failed:", raw);
+        throw new Error(raw);
       }
     },
     [address],
