@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/auth";
-import { applyAsJury } from "@/lib/auth-api";
+import { applyAsFounder } from "@/lib/auth-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,10 +17,10 @@ import {
 } from "@/components/ui/card";
 import { Loader2, CheckCircle } from "lucide-react";
 
-export default function ApplyJuryPage() {
+export default function ApplyFounderPage() {
   const { user, loginWithWallet, loading } = useAuth();
   const router = useRouter();
-  const [statement, setStatement] = useState("");
+  const [pitch, setPitch] = useState("");
   const [experience, setExperience] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -43,7 +43,7 @@ export default function ApplyJuryPage() {
     setError(null);
     try {
       await ensureAuth();
-      await applyAsJury({ statement, experience: experience || undefined });
+      await applyAsFounder({ pitch, experience: experience || undefined });
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Application failed");
@@ -62,13 +62,13 @@ export default function ApplyJuryPage() {
               Application Submitted
             </CardTitle>
             <CardDescription>
-              Your jury application is now pending admin review.
+              Your founder application is now pending jury review.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-text-secondary">
-              You will not gain dashboard access until an admin approves your
-              application and promotes your account to jury role.
+              Jury members will review your pitch. You will gain dashboard
+              access once approved.
             </p>
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => router.push("/")}>
@@ -88,10 +88,10 @@ export default function ApplyJuryPage() {
     <div className="mx-auto max-w-lg px-4 py-16">
       <Card>
         <CardHeader>
-          <CardTitle>Apply as Jury</CardTitle>
+          <CardTitle>Apply as Founder</CardTitle>
           <CardDescription>
-            Jury access is restricted and requires admin approval. Submit your
-            qualifications below. Only approved jurors may use the platform.
+            Submit your startup pitch for jury review. Only approved founders
+            may access the platform.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -102,16 +102,16 @@ export default function ApplyJuryPage() {
               </p>
             )}
             <div className="space-y-2">
-              <Label htmlFor="statement">Qualifications</Label>
+              <Label htmlFor="pitch">Startup Pitch</Label>
               <textarea
-                id="statement"
-                className="flex min-h-[120px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-text-primary"
-                value={statement}
-                onChange={(e) => setStatement(e.target.value)}
+                id="pitch"
+                className="flex min-h-[140px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-text-primary"
+                value={pitch}
+                onChange={(e) => setPitch(e.target.value)}
                 required
                 minLength={20}
-                maxLength={2000}
-                placeholder="Describe your qualifications for reviewing startups on Ondex…"
+                maxLength={5000}
+                placeholder="Describe your startup, what you're building, and why you need funding…"
               />
             </div>
             <div className="space-y-2">
@@ -121,7 +121,7 @@ export default function ApplyJuryPage() {
                 value={experience}
                 onChange={(e) => setExperience(e.target.value)}
                 maxLength={2000}
-                placeholder="Relevant experience in investing, startups, or governance"
+                placeholder="Relevant background or traction"
               />
             </div>
             {error && (

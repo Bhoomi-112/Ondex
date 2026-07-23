@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ValidationError, ConflictError, UnauthorizedError } from "../../src/lib/errors.js";
+import { ValidationError, ConflictError, UnauthorizedError, ForbiddenError } from "../../src/lib/errors.js";
 
 vi.mock("../../src/repositories/session.repository.js", () => ({
   create: vi.fn(),
@@ -155,58 +155,15 @@ describe("AuthService", () => {
   });
 
   describe("selectRole", () => {
-    it("sets founder role once", async () => {
-      mockUser.findById.mockResolvedValue({
-        id: "u1",
-        wallet: "GWALLET",
-        email: null,
-        role: null,
-        onboardingStatus: "role_selected",
-        displayName: null,
-        bio: null,
-        mfaSecret: null,
-        mfaEnabled: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      mockUser.findByWallet.mockResolvedValue(null);
-      mockUser.setRole.mockResolvedValue({
-        id: "u1",
-        wallet: "GWALLET",
-        email: null,
-        role: "founder",
-        onboardingStatus: "role_selected",
-        displayName: null,
-        bio: null,
-        mfaSecret: null,
-        mfaEnabled: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      mockRefresh.create.mockResolvedValue({} as any);
-
-      const result = await authService.selectRole("u1", "founder");
-      expect(result.user.role).toBe("founder");
-      expect(result.user.dashboardPath).toBe("/founder-dashboard");
+    it("rejects all self-selection attempts", async () => {
+      await expect(authService.selectRole("u1", "founder")).rejects.toThrow(
+        ForbiddenError,
+      );
     });
 
-    it("rejects second role selection", async () => {
-      mockUser.findById.mockResolvedValue({
-        id: "u1",
-        wallet: "GWALLET",
-        email: null,
-        role: "investor",
-        onboardingStatus: "active",
-        displayName: "A",
-        bio: null,
-        mfaSecret: null,
-        mfaEnabled: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      await expect(authService.selectRole("u1", "founder")).rejects.toThrow(
-        ConflictError,
+    it("rejects investor self-selection", async () => {
+      await expect(authService.selectRole("u1", "investor")).rejects.toThrow(
+        ForbiddenError,
       );
     });
   });

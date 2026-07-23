@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 
 export default function OnboardingPage() {
   const { user, setUser, loading } = useAuth();
@@ -26,9 +27,9 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (user && !user.role) {
-      router.replace("/signup/role");
-    } else if (user?.onboardingStatus === "active" && user.role) {
+    if (!user || !user.role) {
+      router.replace("/login");
+    } else if (user.onboardingStatus === "active") {
       router.replace(dashboardPathForRole(user.role));
     }
   }, [loading, user, router]);
@@ -38,10 +39,7 @@ export default function OnboardingPage() {
     setBusy(true);
     setError(null);
     try {
-      const { user: updated } = await completeProfile({
-        displayName,
-        bio: bio || undefined,
-      });
+      const { user: updated } = await completeProfile({ displayName, bio: bio || undefined });
       setUser(updated);
       if (updated.role) {
         router.push(dashboardPathForRole(updated.role));
@@ -53,16 +51,16 @@ export default function OnboardingPage() {
     }
   };
 
+  if (!user || !user.role) return null;
+
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-4 py-16">
       <Card>
         <CardHeader>
           <CardTitle>Complete your profile</CardTitle>
           <CardDescription>
-            Dashboard access requires an active onboarding status. Role:{" "}
-            <span className="font-medium text-text-primary">
-              {user?.role ?? "—"}
-            </span>
+            Final step before accessing the dashboard. Role:{" "}
+            <span className="font-medium text-text-primary">{user.role}</span>
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -95,7 +93,14 @@ export default function OnboardingPage() {
               </p>
             )}
             <Button type="submit" className="w-full" disabled={busy}>
-              {busy ? "Saving…" : "Finish & open dashboard"}
+              {busy ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                "Finish & open dashboard"
+              )}
             </Button>
           </form>
         </CardContent>

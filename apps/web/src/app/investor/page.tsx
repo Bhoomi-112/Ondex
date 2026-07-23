@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@/providers/wallet";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,230 +11,235 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TransactionStatus } from "@/components/ui/transaction-status";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Coins, TrendingUp, ExternalLink, Wallet } from "lucide-react";
-import { formatXLM, stroopsToXLM, formatAddress, stellarExpertTxUrl } from "@/lib/utils";
-import { getEscrowClient, getPlatformClient } from "@/lib/contracts";
+  Shield,
+  Wallet,
+  TrendingUp,
+  Clock,
+  Coins,
+  CheckCircle2,
+  ArrowRight,
+  Ban,
+  ThumbsUp,
+  ThumbsDown,
+  Gavel,
+} from "lucide-react";
+import { formatXLM, stroopsToXLM, formatAddress } from "@/lib/utils";
+import { fetchCampaigns, type ApiCampaign } from "@/lib/api";
+import { getEscrowClient, getNetworkConfig, xlmToStroops } from "@/lib/contracts";
 import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
-<<<<<<< Updated upstream
-import { Networks } from "@stellar/stellar-sdk";
-=======
-import { useCoachMarks } from "@/hooks/use-coach-marks";
-import { CoachMark } from "@/components/ui/coach-mark";
-import { EmptyState } from "@/components/ui/empty-state";
->>>>>>> Stashed changes
 
-interface Campaign {
-  id: number;
-  appId: number;
-  name: string;
-  pitch: string;
-  goal: number;
-  totalDeposited: number;
-  status: string;
-  milestones: { amount: number; released: boolean }[];
-  myDeposit: number;
-  releasedCount: number;
-  totalMilestones: number;
+type EscrowState =
+  | { tag: "Active" }
+  | { tag: "JuryApproved" }
+  | { tag: "DisputeOpen" }
+  | { tag: "Released" }
+  | { tag: "Refunded" };
+
+type OnChainCampaign = {
+  state: EscrowState;
+  total_amount: bigint;
+  dispute_deadline: bigint;
+  dispute_window_secs: bigint;
+  startup: string;
+  asset: string;
+  approved_at: bigint;
+  created_at: bigint;
+};
+
+function stateLabel(s: EscrowState): string {
+  switch (s.tag) {
+    case "Active": return "Active";
+    case "JuryApproved": return "Jury Approved";
+    case "DisputeOpen": return "Dispute Open";
+    case "Released": return "Released";
+    case "Refunded": return "Refunded";
+  }
+}
+
+function stateVariant(s: EscrowState): "warning" | "success" | "danger" | "secondary" | "default" {
+  switch (s.tag) {
+    case "Active": return "warning";
+    case "JuryApproved": return "default";
+    case "DisputeOpen": return "danger";
+    case "Released": return "success";
+    case "Refunded": return "secondary";
+  }
+}
+
+function StateIcon({ state }: { state: EscrowState }) {
+  switch (state.tag) {
+    case "Active": return <Clock className="h-4 w-4" />;
+    case "JuryApproved": return <CheckCircle2 className="h-4 w-4" />;
+    case "DisputeOpen": return <Gavel className="h-4 w-4" />;
+    case "Released": return <ArrowRight className="h-4 w-4" />;
+    case "Refunded": return <Ban className="h-4 w-4" />;
+  }
 }
 
 export default function InvestorDashboard() {
   const { address, signTransaction } = useWallet();
   const { addToast } = useToast();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [campaigns, setCampaigns] = useState<ApiCampaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [onChain, setOnChain] = useState<Record<number, OnChainCampaign>>({});
+  const [deposits, setDeposits] = useState<Record<number, bigint>>({});
+  const [depositModal, setDepositModal] = useState<number | null>(null);
   const [depositAmount, setDepositAmount] = useState("");
-  const [depositDialogOpen, setDepositDialogOpen] = useState(false);
   const [txStatus, setTxStatus] = useState<"idle" | "signing" | "submitting" | "confirming" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
 
-<<<<<<< Updated upstream
-  const fetchCampaigns = useCallback(async () => {
-=======
-  const statsRef = useRef<HTMLDivElement>(null);
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const depositRef = useRef<HTMLButtonElement>(null);
-
-  const coach = useCoachMarks({
-    storageKey: "investor_dashboard",
-    steps: [
-      {
-        id: "stats",
-        targetRef: statsRef,
-        title: "Your Portfolio",
-        description: "See your total invested, active campaigns, and portfolio at a glance.",
-        position: "bottom",
-      },
-      {
-        id: "tabs",
-        targetRef: tabsRef,
-        title: "Browse & Portfolio",
-        description: "Browse all approved campaigns or switch to My Investments to track your deposits.",
-        position: "top",
-      },
-      {
-        id: "deposit",
-        targetRef: depositRef,
-        title: "Deposit Funds",
-        description: "Click Deposit to lock XLM into a Soroban escrow contract for a campaign.",
-        position: "left",
-      },
-    ],
-    autoStart: true,
-  });
-
-  const fetchCampaignsList = useCallback(async () => {
->>>>>>> Stashed changes
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const platformClient = getPlatformClient(address || undefined);
-      const appsResult = await platformClient.list_applications({ offset: BigInt(0), limit: BigInt(100) });
-      const rawApps = appsResult.result;
-
-      const approved = rawApps.filter((app: any) => app.status?.tag === "Approved");
-
-      const escrowClient = getEscrowClient(address || undefined);
-
-      const campaigns: Campaign[] = await Promise.all(
-        approved.map(async (app: any) => {
-          const askAmountNum = stroopsToXLM(app.ask_amount);
-          const appMilestones = app.milestones?.map((m: any) => ({
-            amount: stroopsToXLM(m.amount),
-            released: false,
-          })) || [];
-
-          let totalDeposited = 0;
-          let myDeposit = 0;
-          let releasedCount = 0;
-          let totalMilestones = appMilestones.length;
-          let campaignStatus = "Active";
-
-          try {
-            const [totalResult, milestoneCountResult, releasedCountResult, statusResult] = await Promise.allSettled([
-              escrowClient.get_total_deposited(),
-              escrowClient.get_milestone_count(),
-              escrowClient.get_released_count(),
-              escrowClient.get_campaign_status(),
-            ]);
-
-            if (totalResult.status === "fulfilled") {
-              totalDeposited = stroopsToXLM(totalResult.value.result);
-            }
-            if (milestoneCountResult.status === "fulfilled") {
-              totalMilestones = Number(milestoneCountResult.value.result);
-            }
-            if (releasedCountResult.status === "fulfilled") {
-              releasedCount = Number(releasedCountResult.value.result);
-            }
-            if (statusResult.status === "fulfilled") {
-              const tag = (statusResult.value.result as any)?.tag;
-              if (tag) campaignStatus = tag;
-            }
-
-            if (address) {
-              try {
-                const depositResult = await escrowClient.get_deposit({ investor: address });
-                myDeposit = stroopsToXLM(depositResult.result);
-              } catch {
-                myDeposit = 0;
-              }
-            }
-          } catch {
-            // Escrow contract may not be initialized yet
-          }
-
-          return {
-            id: Number(app.id),
-            appId: Number(app.id),
-            name: app.name || "Campaign #" + Number(app.id),
-            pitch: app.pitch || "",
-            goal: askAmountNum,
-            totalDeposited,
-            status: campaignStatus,
-            milestones: appMilestones,
-            myDeposit,
-            releasedCount,
-            totalMilestones,
-          };
-        })
-      );
-
-      setCampaigns(campaigns);
+      const items = await fetchCampaigns();
+      setCampaigns(items);
     } catch (err) {
-      console.error("Failed to fetch campaigns from chain:", err);
+      console.error("Failed to fetch campaigns:", err);
     } finally {
       setLoading(false);
     }
-  }, [address]);
+  }, []);
 
   useEffect(() => {
-    fetchCampaigns();
-  }, [fetchCampaigns]);
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (!address || campaigns.length === 0) return;
+    const escrow = getEscrowClient(address);
+    (async () => {
+      const stateMap: Record<number, OnChainCampaign> = {};
+      const depositMap: Record<number, bigint> = {};
+      for (const camp of campaigns) {
+        const cid = (camp.campaignId ?? camp.id ?? 0) as number;
+        try {
+          const onC = await escrow.get_campaign({ campaign_id: cid });
+          stateMap[cid] = onC.result;
+        } catch { /* not created yet */ }
+        try {
+          const dep = await escrow.get_deposit({ campaign_id: cid, investor: address });
+          const amt = typeof dep.result === "bigint" ? dep.result : BigInt(String(dep.result));
+          if (amt > 0n) depositMap[cid] = amt;
+          else depositMap[cid] = 0n;
+        } catch {
+          depositMap[cid] = 0n;
+        }
+      }
+      setOnChain(stateMap);
+      setDeposits(depositMap);
+    })();
+  }, [address, campaigns]);
+
+  const activeCamps = campaigns.filter((c) => {
+    const state = onChain[c.campaignId ?? c.id ?? 0];
+    if (!state) return true;
+    return state.state.tag === "Active";
+  });
+
+  const juryApprovedCamps = campaigns.filter((c) => {
+    const state = onChain[c.campaignId ?? c.id ?? 0];
+    return state?.state.tag === "JuryApproved";
+  });
+
+  const disputeOpenCamps = campaigns.filter((c) => {
+    const state = onChain[c.campaignId ?? c.id ?? 0];
+    return state?.state.tag === "DisputeOpen";
+  });
+
+  const closedCamps = campaigns.filter((c) => {
+    const state = onChain[c.campaignId ?? c.id ?? 0];
+    return state?.state.tag === "Released" || state?.state.tag === "Refunded";
+  });
 
   const handleDeposit = async () => {
-    if (!address || !selectedCampaign || !depositAmount) return;
-
+    if (!address || depositModal === null) return;
     const amount = parseFloat(depositAmount);
-    if (isNaN(amount) || amount <= 0) {
-      addToast({ title: "Invalid amount", description: "Please enter a valid XLM amount.", variant: "error" });
+    if (!amount || amount <= 0) {
+      addToast({ title: "Invalid amount", variant: "error" });
       return;
     }
-
     setTxStatus("signing");
     setTxError(undefined);
-
     try {
-      setTxStatus("submitting");
+      const escrow = getEscrowClient(address);
       const result = await buildSignSubmit(
-        () => getEscrowClient(address).deposit({
+        () => escrow.deposit({
+          campaign_id: depositModal,
           investor: address,
-          amount: BigInt(Math.round(amount * 10_000_000)),
+          amount: xlmToStroops(amount),
         }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        (xdr) => signTransaction(xdr, { networkPassphrase: getNetworkConfig().networkPassphrase }),
       );
-
       setTxHash(result.hash);
       setTxStatus("success");
-
       addToast({
-        title: "Deposit Successful",
-        description: `Deposited ${amount} XLM into Campaign #${selectedCampaign.id}`,
+        title: "Deposit submitted",
+        description: `${amount} XLM deposited into campaign #${depositModal}`,
         variant: "success",
         txHash: result.hash,
         txUrl: getExplorerUrl(result.hash),
       });
-
-      setDepositDialogOpen(false);
+      setDepositModal(null);
       setDepositAmount("");
-      fetchCampaigns();
-    } catch (err: any) {
+      fetchData();
+    } catch (err: unknown) {
       setTxStatus("error");
-      const msg = err?.message || String(err);
-      const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : msg || "Deposit failed"
-      );
-      addToast({
-        title: "Deposit Failed",
-        description: isAccountMissing
-          ? "Account not found on testnet. Fund your wallet first."
-          : msg || "Transaction was rejected",
-        variant: "error",
-      });
+      const msg = err instanceof Error ? err.message : String(err);
+      setTxError(msg);
+      addToast({ title: "Deposit failed", description: msg, variant: "error" });
     }
   };
 
-  const myInvestments = campaigns.filter(c => c.myDeposit > 0);
-  const totalInvested = myInvestments.reduce((sum, c) => sum + c.myDeposit, 0);
+  const handleDispute = async (campaignId: number) => {
+    if (!address) return;
+    setTxStatus("signing");
+    try {
+      const escrow = getEscrowClient(address);
+      const result = await buildSignSubmit(
+        () => escrow.dispute({ campaign_id: campaignId, disputer: address }),
+        (xdr) => signTransaction(xdr, { networkPassphrase: getNetworkConfig().networkPassphrase }),
+      );
+      setTxHash(result.hash);
+      setTxStatus("success");
+      addToast({
+        title: "Dispute raised",
+        description: `Dispute opened for campaign #${campaignId}`,
+        variant: "warning",
+        txHash: result.hash,
+        txUrl: getExplorerUrl(result.hash),
+      });
+      fetchData();
+    } catch (err: unknown) {
+      setTxStatus("error");
+      addToast({ title: "Dispute failed", description: String(err), variant: "error" });
+    }
+  };
+
+  const handleInvestorVote = async (campaignId: number, approve: boolean) => {
+    if (!address) return;
+    setTxStatus("signing");
+    try {
+      const escrow = getEscrowClient(address);
+      const result = await buildSignSubmit(
+        () => escrow.investor_vote({ campaign_id: campaignId, investor: address, approve }),
+        (xdr) => signTransaction(xdr, { networkPassphrase: getNetworkConfig().networkPassphrase }),
+      );
+      setTxHash(result.hash);
+      setTxStatus("success");
+      addToast({
+        title: approve ? "Voted to release" : "Voted to refund",
+        description: `Campaign #${campaignId}`,
+        variant: "success",
+        txHash: result.hash,
+        txUrl: getExplorerUrl(result.hash),
+      });
+      fetchData();
+    } catch (err: unknown) {
+      setTxStatus("error");
+      addToast({ title: "Vote failed", description: String(err), variant: "error" });
+    }
+  };
 
   if (!address) {
     return (
@@ -245,7 +250,7 @@ export default function InvestorDashboard() {
               Connect your wallet to access the Investor Dashboard
             </h2>
             <p className="text-text-secondary">
-              Browse approved campaigns and invest in the future of innovation.
+              Browse campaigns, deposit into startups, and vote on disputes.
             </p>
           </CardContent>
         </Card>
@@ -257,51 +262,66 @@ export default function InvestorDashboard() {
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-          <Coins className="h-6 w-6" />
+          <Shield className="h-6 w-6" />
           Investor Dashboard
         </h1>
         <p className="text-text-secondary mt-1">
-          Browse approved campaigns and invest via Soroban escrow contracts.
+          Deposit, dispute, and vote — all on-chain via Soroban escrow.
         </p>
+        <div className="flex items-center gap-2 mt-3">
+          <Badge variant="success" className="flex items-center gap-1.5">
+            <Shield className="h-3 w-3" />
+            Verified Investor
+          </Badge>
+          <div className="flex items-center gap-1.5 text-sm text-text-muted">
+            <Wallet className="h-4 w-4" />
+            <span className="font-mono">{formatAddress(address)}</span>
+          </div>
+        </div>
       </div>
 
-      <div ref={statsRef} className="grid gap-4 sm:grid-cols-3 mb-8">
+      <div className="grid gap-4 sm:grid-cols-4 mb-8">
         <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-md bg-accent/10 p-2">
-                <Coins className="h-5 w-5 text-accent" />
-              </div>
-              <div>
-                <p className="text-sm text-text-secondary">Total Invested</p>
-                <p className="text-lg font-bold text-text-primary">{formatXLM(totalInvested)} XLM</p>
-              </div>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-mint/10 p-2">
+              <Coins className="h-5 w-5 text-mint" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Active</p>
+              <p className="text-lg font-bold text-text-primary">{activeCamps.length}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-md bg-success/10 p-2">
-                <TrendingUp className="h-5 w-5 text-success" />
-              </div>
-              <div>
-                <p className="text-sm text-text-secondary">Active Campaigns</p>
-                <p className="text-lg font-bold text-text-primary">{campaigns.length}</p>
-              </div>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-lavender/10 p-2">
+              <CheckCircle2 className="h-5 w-5 text-lavender" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Jury Approved</p>
+              <p className="text-lg font-bold text-text-primary">{juryApprovedCamps.length}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-md bg-warning/10 p-2">
-                <Wallet className="h-5 w-5 text-warning" />
-              </div>
-              <div>
-                <p className="text-sm text-text-secondary">My Campaigns</p>
-                <p className="text-lg font-bold text-text-primary">{myInvestments.length}</p>
-              </div>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-danger/10 p-2">
+              <Gavel className="h-5 w-5 text-danger" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Dispute Open</p>
+              <p className="text-lg font-bold text-text-primary">{disputeOpenCamps.length}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="rounded-md bg-accent/10 p-2">
+              <TrendingUp className="h-5 w-5 text-accent" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Closed</p>
+              <p className="text-lg font-bold text-text-primary">{closedCamps.length}</p>
             </div>
           </CardContent>
         </Card>
@@ -315,212 +335,215 @@ export default function InvestorDashboard() {
         </Card>
       )}
 
-      <Tabs defaultValue="browse" className="space-y-6">
-        <TabsList ref={tabsRef}>
-          <TabsTrigger value="browse">Browse Campaigns ({campaigns.length})</TabsTrigger>
-          <TabsTrigger value="portfolio">My Investments ({myInvestments.length})</TabsTrigger>
-        </TabsList>
+      {loading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-40 w-full" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      ) : campaigns.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Coins className="h-12 w-12 text-text-muted mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-text-primary mb-2">
+              No Campaigns Available
+            </h3>
+            <p className="text-text-secondary mb-4">
+              There are no open funding campaigns at this time.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {[...activeCamps, ...juryApprovedCamps, ...disputeOpenCamps, ...closedCamps].map((camp) => {
+            const cid = (camp.campaignId ?? camp.id ?? 0) as number;
+            const chain = onChain[cid];
+            const dep = deposits[cid];
+            const state = chain?.state;
 
-        <TabsContent value="browse" className="space-y-4">
-          {loading ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Skeleton className="h-48 w-full" />
-              <Skeleton className="h-48 w-full" />
-            </div>
-          ) : campaigns.length === 0 ? (
-            <EmptyState
-              icon={<Coins className="h-7 w-7 text-amber" />}
-              title="No Campaigns Available"
-              description="There are no jury-approved campaigns yet. Check back later or explore the platform overview."
-            />
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {campaigns.map((campaign) => {
-                const progress = campaign.goal > 0 ? (campaign.totalDeposited / campaign.goal) * 100 : 0;
-
-                return (
-                  <Card key={campaign.id} className="hover:border-accent/30 transition-colors">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle>{campaign.name}</CardTitle>
-                          <CardDescription>Campaign #{campaign.id}</CardDescription>
-                        </div>
-                        <Badge variant={campaign.status === "Active" ? "default" : "success"}>
-                          {campaign.status}
+            return (
+              <Card key={cid}>
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="truncate">
+                        {camp.name || `Campaign #${cid}`}
+                      </CardTitle>
+                      <CardDescription>
+                        {camp.startup ? `Startup: ${formatAddress(camp.startup)}` : `ID: ${cid}`}
+                      </CardDescription>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {state && (
+                        <Badge variant={stateVariant(state)} className="flex items-center gap-1">
+                          <StateIcon state={state} />
+                          {stateLabel(state)}
                         </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {campaign.pitch && (
-                        <p className="text-sm text-text-secondary line-clamp-2">{campaign.pitch}</p>
                       )}
+                      {!state && <Badge variant="secondary">No escrow</Badge>}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {camp.pitch && (
+                    <p className="text-sm text-text-secondary line-clamp-2">{camp.pitch}</p>
+                  )}
 
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                    {camp.goal && (
                       <div>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-text-secondary">Progress</span>
-                          <span className="text-text-primary font-mono">
-                            {formatXLM(campaign.totalDeposited)} / {formatXLM(campaign.goal)} XLM
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-card-hover overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-accent transition-all"
-                            style={{ width: `${Math.min(progress, 100)}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-text-muted mt-1">{progress.toFixed(1)}% funded</p>
-                      </div>
-
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-text-secondary">Milestones</span>
-                        <span className="text-text-primary">
-                          {campaign.releasedCount}/{campaign.totalMilestones} released
+                        <span className="text-text-muted">Goal: </span>
+                        <span className="font-medium text-text-primary">
+                          {formatXLM(Number(camp.goal))} XLM
                         </span>
                       </div>
-
-                      {campaign.myDeposit > 0 && (
-                        <div className="rounded-md bg-success/5 border border-success/20 p-2 text-sm">
-                          <span className="text-success font-medium">Your deposit: {formatXLM(campaign.myDeposit)} XLM</span>
-                        </div>
-                      )}
-
-                      <div className="flex gap-2">
-                        <Button
-                          ref={campaigns.length > 0 && campaigns[0].id === campaign.id ? depositRef : undefined}
-                          className="flex-1"
-                          onClick={() => {
-                            setSelectedCampaign(campaign);
-                            setDepositDialogOpen(true);
-                          }}
-                          disabled={campaign.status !== "Active"}
-                        >
-                          Deposit
-                        </Button>
-                        <Button variant="secondary" size="icon" asChild>
-                          <a
-                            href={`https://stellar.expert/explorer/testnet/contract/${campaign.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="portfolio" className="space-y-4">
-          {myInvestments.length === 0 ? (
-            <EmptyState
-              icon={<Wallet className="h-7 w-7 text-text-muted" />}
-              title="No Investments Yet"
-              description="Browse campaigns above and make your first deposit into an escrow contract."
-            />
-          ) : (
-            <div className="space-y-3">
-              {myInvestments.map((campaign) => (
-                <Card key={campaign.id}>
-                  <CardContent className="py-4">
-                    <div className="flex items-center justify-between">
+                    )}
+                    {(camp.totalDeposited || camp.total_deposited || chain) && (
                       <div>
-                        <p className="font-medium text-text-primary">
-                          {campaign.name}
-                        </p>
-                        <p className="text-sm text-text-secondary">
-                          Your deposit: {formatXLM(campaign.myDeposit)} XLM
-                        </p>
+                        <span className="text-text-muted">Total deposited: </span>
+                        <span className="font-medium text-text-primary">
+                          {chain
+                            ? `${formatXLM(stroopsToXLM(chain.total_amount))} XLM`
+                            : `${formatXLM(Number(camp.totalDeposited ?? camp.total_deposited ?? 0))} XLM`}
+                        </span>
                       </div>
-                      <Badge variant={campaign.status === "Active" ? "default" : "success"}>
-                        {campaign.status}
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      <Dialog open={depositDialogOpen} onOpenChange={setDepositDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Deposit to {selectedCampaign?.name || "Campaign"}</DialogTitle>
-            <DialogDescription>
-              Funds are locked in a Soroban escrow contract until milestones are completed.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            {selectedCampaign && (
-              <div className="rounded-md bg-background p-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-text-secondary">Goal</span>
-                  <span className="text-text-primary">{formatXLM(selectedCampaign.goal)} XLM</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-secondary">Raised</span>
-                  <span className="text-text-primary">{formatXLM(selectedCampaign.totalDeposited)} XLM</span>
-                </div>
-                {selectedCampaign.myDeposit > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Your deposit</span>
-                    <span className="text-success font-medium">{formatXLM(selectedCampaign.myDeposit)} XLM</span>
+                    )}
+                    {dep !== undefined && dep > 0n && (
+                      <div>
+                        <span className="text-text-muted">Your deposit: </span>
+                        <span className="font-medium text-mint">
+                          {formatXLM(stroopsToXLM(dep))} XLM
+                        </span>
+                      </div>
+                    )}
+                    {chain && chain.dispute_window_secs > 0n && (
+                      <div>
+                        <span className="text-text-muted">Dispute window: </span>
+                        <span className="font-medium text-text-primary">
+                          {Number(chain.dispute_window_secs)}s
+                        </span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
-            <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2">
-              <p className="text-xs text-warning">
-                Funds are locked in a Soroban escrow contract. Withdrawals are only possible through
-                dispute resolution — there is no direct withdrawal.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="deposit-amount">Amount (XLM)</Label>
-              <Input
-                id="deposit-amount"
-                type="number"
-                step="0.0000001"
-                min="0"
-                placeholder="Enter amount to deposit"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
-              />
-            </div>
-            <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => setDepositDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={handleDeposit}
-                disabled={!depositAmount || txStatus !== "idle"}
-              >
-                {txStatus !== "idle" ? "Processing..." : "Confirm Deposit"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
-      {coach.isActive && coach.currentStepData && (
-        <CoachMark
-          isOpen={coach.isActive}
-          onClose={coach.dismiss}
-          onNext={coach.next}
-          title={coach.currentStepData.title}
-          description={coach.currentStepData.description}
-          targetRef={coach.currentStepData.targetRef}
-          position={coach.currentStepData.position}
-          step={coach.currentStep ?? 0}
-          totalSteps={coach.totalSteps}
-        />
+                  {/* Action buttons per state */}
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {(!state || state.tag === "Active") && (
+                      <Button
+                        size="sm"
+                        onClick={() => { setDepositModal(cid); setDepositAmount(""); }}
+                        disabled={txStatus !== "idle"}
+                      >
+                        <Coins className="mr-1 h-4 w-4" />
+                        Deposit
+                      </Button>
+                    )}
+
+                    {state?.tag === "JuryApproved" && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDispute(cid)}
+                          disabled={txStatus !== "idle"}
+                        >
+                          <Gavel className="mr-1 h-4 w-4" />
+                          Raise Dispute
+                        </Button>
+                        <p className="text-xs text-text-muted self-center">
+                          Dispute deadline: {chain ? new Date(Number(chain.dispute_deadline) * 1000).toLocaleString() : "—"}
+                        </p>
+                      </>
+                    )}
+
+                    {state?.tag === "DisputeOpen" && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => handleInvestorVote(cid, true)}
+                          disabled={txStatus !== "idle"}
+                        >
+                          <ThumbsUp className="mr-1 h-4 w-4" />
+                          Vote Release
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleInvestorVote(cid, false)}
+                          disabled={txStatus !== "idle"}
+                        >
+                          <ThumbsDown className="mr-1 h-4 w-4" />
+                          Vote Refund
+                        </Button>
+                      </>
+                    )}
+
+                    {state?.tag === "Released" && (
+                      <Badge variant="success" className="flex items-center gap-1">
+                        <ArrowRight className="h-3 w-3" />
+                        Released to startup
+                      </Badge>
+                    )}
+                    {state?.tag === "Refunded" && (
+                      <Badge variant="secondary" className="flex items-center gap-1">
+                        <Ban className="h-3 w-3" />
+                        Refunded
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Deposit Modal */}
+      {depositModal !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Deposit into Campaign #{depositModal}</CardTitle>
+              <CardDescription>
+                Funds are locked in the Soroban escrow contract. They release only
+                on jury approval + dispute window expiry.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="depositAmount">Amount (XLM)</Label>
+                <Input
+                  id="depositAmount"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  placeholder="e.g. 100"
+                />
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  className="flex-1"
+                  onClick={handleDeposit}
+                  disabled={!depositAmount || parseFloat(depositAmount) <= 0 || txStatus !== "idle"}
+                >
+                  {txStatus !== "idle" ? "Processing..." : "Confirm Deposit"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setDepositModal(null)}
+                  disabled={txStatus !== "idle"}
+                >
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-text-muted text-center">
+                You will sign a transaction via your Stellar wallet.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

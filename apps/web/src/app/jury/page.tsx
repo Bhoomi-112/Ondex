@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@/providers/wallet";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,9 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TransactionStatus } from "@/components/ui/transaction-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCoachMarks } from "@/hooks/use-coach-marks";
-import { CoachMark } from "@/components/ui/coach-mark";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
   Dialog,
   DialogContent,
@@ -32,11 +29,6 @@ import {
   UserPlus,
 } from "lucide-react";
 import { formatXLM, stroopsToXLM, formatAddress, timeAgo } from "@/lib/utils";
-<<<<<<< Updated upstream
-import { getPlatformClient, getEscrowClient, ESCROW_CONTRACT_ID } from "@/lib/contracts";
-import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
-import { Networks } from "@stellar/stellar-sdk";
-=======
 import {
   getJuryClient,
   getEscrowClient,
@@ -50,9 +42,13 @@ import {
   appId as resolveAppId,
   type ApiApplication,
 } from "@/lib/api";
-import { buildSignSubmit, signAndSendSorobanTx, getExplorerUrl } from "@/lib/tx";
+import {
+  listFounderApplications,
+  approveFounderApplication,
+  rejectFounderApplication,
+} from "@/lib/auth-api";
+import { buildSignSubmit, getExplorerUrl } from "@/lib/tx";
 import { stroopsToXLM as toXlm } from "@/lib/utils";
->>>>>>> Stashed changes
 
 interface Application {
   id: number;
@@ -86,38 +82,14 @@ export default function JuryDashboard() {
   const [txError, setTxError] = useState<string | undefined>();
   const [voteConfirmOpen, setVoteConfirmOpen] = useState(false);
   const [pendingVote, setPendingVote] = useState<{ appId: number; approve: boolean } | null>(null);
-
-  const statsRef = useRef<HTMLDivElement>(null);
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const voteRef = useRef<HTMLDivElement>(null);
-
-  const coach = useCoachMarks({
-    storageKey: "jury_dashboard",
-    steps: [
-      {
-        id: "stats",
-        targetRef: statsRef,
-        title: "Your Jury Stats",
-        description: "See pending reviews, approved applications, and your voting history.",
-        position: "bottom",
-      },
-      {
-        id: "tabs",
-        targetRef: tabsRef,
-        title: "Review Tabs",
-        description: "Switch between Pending Review, Approved, and your voting history.",
-        position: "top",
-      },
-      {
-        id: "vote",
-        targetRef: voteRef,
-        title: "Cast Your Vote",
-        description: "Review each application and cast an Approve or Reject vote on-chain.",
-        position: "left",
-      },
-    ],
-    autoStart: true,
-  });
+  const [founderApps, setFounderApps] = useState<Array<{
+    id: number; wallet: string; status: string; name: string; pitch: string;
+    askAmount: string; experience: string | null; createdAt: string;
+    milestones: Array<{ id: number; description: string; amount: string; idx: number }>;
+    user: { id: string; displayName: string | null; wallet: string | null };
+  }>>([]);
+  const [founderAppsLoading, setFounderAppsLoading] = useState(false);
+  const [founderActionId, setFounderActionId] = useState<number | null>(null);
 
   const safeJson = async (res: Response) => {
     if (!res.ok) return null;
@@ -125,76 +97,79 @@ export default function JuryDashboard() {
     try { return JSON.parse(text); } catch { return null; }
   };
 
+  const mapApp = (app: ApiApplication): Application => {
+    const statusMap: Record<string, Application["status"]> = {
+      Submitted: "Submitted",
+      UnderReview: "UnderReview",
+      Approved: "Approved",
+      Rejected: "Rejected",
+    };
+    const statusTag = app.status || "Submitted";
+    const ask = app.askAmount ?? app.ask_amount ?? 0;
+    const askNum = typeof ask === "bigint" ? toXlm(ask) : Number(ask) > 1e6 ? toXlm(Number(ask)) : Number(ask);
+
+    return {
+      id: resolveAppId(app),
+      name: app.name || "Anonymous",
+      pitch: app.pitch || "",
+      askAmount: askNum,
+      status: statusMap[statusTag] || "Submitted",
+      maskName: app.maskName ?? app.mask_name ?? true,
+      maskAddress: app.maskAddress ?? app.mask_address ?? true,
+      startup: app.startup || app.startupAddress || app.startup_address || "",
+      milestones:
+        app.milestones?.map((m, i) => {
+          const amt = m.amount ?? 0;
+          const n = typeof amt === "bigint" ? toXlm(amt) : Number(amt) > 1e6 ? toXlm(Number(amt)) : Number(amt);
+          return {
+            description: m.description || `Milestone ${i + 1}`,
+            amount: n,
+          };
+        }) || [],
+    };
+  };
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const client = getPlatformClient(address || undefined);
-
       if (address) {
         try {
-          const jurorResult = await client.is_juror({ juror: address });
-          setIsJuror(jurorResult.result);
+          const client = getJuryClient(address);
+          const jurorResult = await client.is_reg({ juror: address });
+          setIsJuror(!!jurorResult.result);
         } catch {
           setIsJuror(false);
         }
       }
 
-      const appsResult = await client.list_applications({ offset: BigInt(0), limit: BigInt(100) });
-      const rawApps = appsResult.result;
+      const [pending, allRes] = await Promise.all([
+        fetchPendingApplications(),
+        fetch(apiUrl("/api/applications/all"))
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null) as Promise<{ applications?: ApiApplication[] } | null>,
+      ]);
 
-      const mapped: Application[] = rawApps.map((app: any) => {
-        const statusMap: Record<string, Application["status"]> = {
-          Submitted: "Submitted",
-          UnderReview: "UnderReview",
-          Approved: "Approved",
-          Rejected: "Rejected",
-        };
-        const statusTag = app.status?.tag || "Submitted";
-
-        const milestones = app.milestones?.map((m: any, i: number) => ({
-          description: m.description || `Milestone ${i + 1}`,
-          amount: stroopsToXLM(m.amount),
-        })) || [];
-
-        return {
-          id: Number(app.id),
-          name: app.name || "Anonymous",
-          pitch: app.pitch || "",
-          askAmount: stroopsToXLM(app.ask_amount),
-          status: statusMap[statusTag] || "Submitted",
-          maskName: app.mask_name ?? true,
-          maskAddress: app.mask_address ?? true,
-          startup: app.startup || "",
-          milestones,
-        };
-      });
-
+      const allRaw = allRes?.applications?.length ? allRes.applications : pending;
+      const mapped = allRaw.map(mapApp);
       setAllApplications(mapped);
-      setApplications(mapped.filter(a => a.status === "Submitted" || a.status === "UnderReview"));
+      setApplications(
+        mapped.filter((a) => a.status === "Submitted" || a.status === "UnderReview"),
+      );
 
-      const votesForMe: VoteRecord[] = [];
       if (address) {
-        for (const app of mapped) {
-          try {
-            const votesResult = await client.get_votes({ app_id: BigInt(app.id) });
-            const votes = votesResult.result || [];
-            for (const v of votes) {
-              if (v.voter === address) {
-                votesForMe.push({
-                  appId: app.id,
-                  approve: v.approve,
-                  timestamp: Number(v.timestamp),
-                });
-              }
-            }
-          } catch {
-            // vote fetch may fail for some apps
-          }
-        }
+        const votes = await fetchMyVotes(address);
+        setMyVotes(
+          votes.map((v) => ({
+            appId: Number(v.appId ?? v.app_id ?? v.caseId ?? v.case_id ?? 0),
+            approve: !!v.approve,
+            timestamp: Number(v.timestamp || Date.now() / 1000),
+          })),
+        );
+      } else {
+        setMyVotes([]);
       }
-      setMyVotes(votesForMe);
     } catch (err) {
-      console.error("Failed to fetch applications from chain:", err);
+      console.error("Failed to fetch jury data:", err);
     } finally {
       setLoading(false);
     }
@@ -204,7 +179,49 @@ export default function JuryDashboard() {
     fetchData();
   }, [fetchData]);
 
-  const handleVote = async (appId: number, approve: boolean) => {
+  const fetchFounderApps = useCallback(async () => {
+    setFounderAppsLoading(true);
+    try {
+      const data = await listFounderApplications("pending");
+      setFounderApps(data.items ?? []);
+    } catch {
+      setFounderApps([]);
+    } finally {
+      setFounderAppsLoading(false);
+    }
+  }, []);
+
+  const handleFounderApprove = async (id: number) => {
+    setFounderActionId(id);
+    try {
+      await approveFounderApplication(id);
+      addToast({ title: "Founder Approved", description: "Application approved successfully.", variant: "success" });
+      fetchFounderApps();
+    } catch (err: any) {
+      addToast({ title: "Approval Failed", description: err?.message || "Unknown error", variant: "error" });
+    } finally {
+      setFounderActionId(null);
+    }
+  };
+
+  const handleFounderReject = async (id: number) => {
+    setFounderActionId(id);
+    try {
+      await rejectFounderApplication(id, "Rejected by jury");
+      addToast({ title: "Founder Rejected", description: "Application rejected.", variant: "success" });
+      fetchFounderApps();
+    } catch (err: any) {
+      addToast({ title: "Rejection Failed", description: err?.message || "Unknown error", variant: "error" });
+    } finally {
+      setFounderActionId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isJuror) fetchFounderApps();
+  }, [isJuror, fetchFounderApps]);
+
+  const handleVote = async (caseId: number, approve: boolean) => {
     if (!address) return;
 
     setTxStatus("signing");
@@ -212,29 +229,32 @@ export default function JuryDashboard() {
 
     try {
       setTxStatus("submitting");
-<<<<<<< Updated upstream
       const result = await buildSignSubmit(
-        () => getPlatformClient(address).cast_vote({
-          voter: address,
-          app_id: BigInt(appId),
-          approve,
-          comment_hash: approve ? "approved" : "rejected",
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
-=======
-      const result = await signAndSendSorobanTx(
-        await getJuryClient(address).vote({
-          case_id: caseId,
-          juror: address,
-          vote: voteFromApprove(approve),
-        }),
-        signTransaction,
-        address,
->>>>>>> Stashed changes
+        () =>
+          getJuryClient(address).vote({
+            case_id: caseId,
+            juror: address,
+            vote: voteFromApprove(approve),
+          }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
       setTxStatus("success");
+
+      // Indexer may lag — also record vote off-chain for UI
+      await fetch(apiUrl(`/api/applications/${caseId}/votes`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voter: address,
+          approve,
+          commentHash: result.hash,
+        }),
+      }).catch(() => null);
 
       addToast({
         title: "Vote Recorded",
@@ -249,9 +269,10 @@ export default function JuryDashboard() {
       setTxStatus("error");
       const msg = err?.message || String(err);
       const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : msg || "Failed to cast vote"
+      setTxError(
+        isAccountMissing
+          ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+          : msg || "Failed to cast vote",
       );
       addToast({
         title: "Vote Failed",
@@ -263,65 +284,38 @@ export default function JuryDashboard() {
     }
   };
 
-  const handleApproveApplication = async (appId: number) => {
-    if (!address) return;
-
-    setTxStatus("signing");
-    setTxError(undefined);
-
-    try {
-      setTxStatus("submitting");
-      const result = await buildSignSubmit(
-        () => getPlatformClient(address).approve_application({
-          app_id: BigInt(appId),
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
-      );
-
-      setTxHash(result.hash);
-      setTxStatus("success");
-
-      addToast({
-        title: "Application Approved",
-        description: `Application #${appId} has been approved on-chain.`,
-        variant: "success",
-        txHash: result.hash,
-        txUrl: getExplorerUrl(result.hash),
-      });
-
-      fetchData();
-    } catch (err: any) {
-      setTxStatus("error");
-      const msg = err?.message || String(err);
-      const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : msg || "Failed to approve application"
-      );
-      addToast({
-        title: "Approval Failed",
-        description: isAccountMissing
-          ? "Account not found on testnet. Fund your wallet first."
-          : msg || "Transaction was rejected",
-        variant: "error",
-      });
-    }
-  };
-
   const handleCreateCampaign = async (app: Application) => {
     if (!address) return;
 
+    const windowSecs = process.env.NEXT_PUBLIC_DEFAULT_DISPUTE_WINDOW_SECS;
+    const asset = process.env.NEXT_PUBLIC_XLM_TOKEN_CONTRACT_ID;
+    if (!windowSecs || !asset) {
+      addToast({
+        title: "Config missing",
+        description:
+          "Set NEXT_PUBLIC_DEFAULT_DISPUTE_WINDOW_SECS and NEXT_PUBLIC_XLM_TOKEN_CONTRACT_ID.",
+        variant: "error",
+      });
+      return;
+    }
+
     setTxStatus("signing");
     setTxError(undefined);
 
     try {
       setTxStatus("submitting");
       const result = await buildSignSubmit(
-        () => getPlatformClient(address).create_campaign({
-          app_id: BigInt(app.id),
-          escrow_addr: ESCROW_CONTRACT_ID,
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
+        () =>
+          getEscrowClient(address).open_campaign({
+            campaign_id: app.id,
+            startup: app.startup || address,
+            asset,
+            dispute_window_secs: BigInt(windowSecs),
+          }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
@@ -340,9 +334,10 @@ export default function JuryDashboard() {
       setTxStatus("error");
       const msg = err?.message || String(err);
       const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : msg || "Failed to create campaign"
+      setTxError(
+        isAccountMissing
+          ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+          : msg || "Failed to create campaign",
       );
       addToast({
         title: "Campaign Creation Failed",
@@ -361,23 +356,22 @@ export default function JuryDashboard() {
     setTxError(undefined);
 
     try {
+      const jury = getJuryClient(address);
+      const mins = await jury.get_min_stakes();
+      const [minXlm, minPlatform] = mins.result as readonly [bigint, bigint];
+
       setTxStatus("submitting");
-<<<<<<< Updated upstream
       const result = await buildSignSubmit(
-        () => getPlatformClient(address).register_juror({
-          juror: address,
-        }),
-        (xdr) => signTransaction(xdr, { networkPassphrase: Networks.TESTNET }),
-=======
-      const result = await signAndSendSorobanTx(
-        await jury.register({
-          juror: address,
-          xlm_stake: minXlm,
-          platform_stake: minPlatform,
-        }),
-        signTransaction,
-        address,
->>>>>>> Stashed changes
+        () =>
+          jury.register({
+            juror: address,
+            xlm_stake: minXlm,
+            platform_stake: minPlatform,
+          }),
+        (xdr) =>
+          signTransaction(xdr, {
+            networkPassphrase: getNetworkConfig().networkPassphrase,
+          }),
       );
 
       setTxHash(result.hash);
@@ -385,7 +379,7 @@ export default function JuryDashboard() {
 
       addToast({
         title: "Juror Registered",
-        description: "Your address has been registered as a juror on-chain.",
+        description: "Stake transferred and address registered on-chain.",
         variant: "success",
         txHash: result.hash,
         txUrl: getExplorerUrl(result.hash),
@@ -396,20 +390,16 @@ export default function JuryDashboard() {
       setTxStatus("error");
       const msg = err?.message || String(err);
       const isAccountMissing = msg.includes("Account not found") || msg.includes("404");
-      const isAuth = msg.includes("Unauthorized") || msg.includes("admin") || msg.includes("not authorized") || msg.includes("require_auth") || msg.includes("sceAuth") || msg.includes("invokeHostFunctionTrapped") || msg.includes("HostError");
-      setTxError(isAccountMissing
-        ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
-        : isAuth
-          ? "Only the contract admin can register jurors. Contact the platform admin or use the CLI: `pnpm tsx scripts/register-juror.ts <your_address>`"
-          : msg || "Failed to register as juror"
+      setTxError(
+        isAccountMissing
+          ? "Your testnet account is not funded. Click 'Fund Testnet' in the navbar to get started."
+          : msg || "Failed to register as juror",
       );
       addToast({
         title: "Registration Failed",
         description: isAccountMissing
           ? "Account not found on testnet. Fund your wallet first."
-          : isAuth
-            ? "Only the contract admin can register jurors."
-            : msg || "Transaction was rejected",
+          : msg || "Transaction was rejected",
         variant: "error",
       });
     }
@@ -472,9 +462,9 @@ export default function JuryDashboard() {
                 {txStatus !== "idle" ? "Processing..." : "Register as Juror (Admin)"}
               </Button>
               <p className="text-xs text-text-muted max-w-sm">
-                This calls <code className="text-mint">register_juror</code> on the platform contract.
-                Only the contract admin address can successfully execute this.
-                If you&apos;re not the admin, ask them to register your address.
+                This stakes the on-chain minimum (XLM + platform token) via{" "}
+                <code className="text-mint">register</code> on jury_registry.
+                Ensure you hold enough balance for both assets.
               </p>
             </div>
           </CardContent>
@@ -511,50 +501,8 @@ export default function JuryDashboard() {
         </Card>
       )}
 
-      <div ref={statsRef} className="grid gap-4 sm:grid-cols-3 mb-8">
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-md bg-warning/10 p-2">
-                <Clock className="h-5 w-5 text-warning" />
-              </div>
-              <div>
-                <p className="text-sm text-text-secondary">Pending Review</p>
-                <p className="text-lg font-bold text-text-primary">{applications.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-md bg-success/10 p-2">
-                <CheckCircle2 className="h-5 w-5 text-success" />
-              </div>
-              <div>
-                <p className="text-sm text-text-secondary">Approved</p>
-                <p className="text-lg font-bold text-text-primary">{allApplications.filter(a => a.status === "Approved").length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-md bg-accent/10 p-2">
-                <Gavel className="h-5 w-5 text-accent" />
-              </div>
-              <div>
-                <p className="text-sm text-text-secondary">My Votes</p>
-                <p className="text-lg font-bold text-text-primary">{myVotes.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       <Tabs defaultValue="pending" className="space-y-6">
-        <TabsList ref={tabsRef}>
+        <TabsList>
           <TabsTrigger value="pending">
             Pending Review ({applications.length})
           </TabsTrigger>
@@ -563,6 +511,9 @@ export default function JuryDashboard() {
           </TabsTrigger>
           <TabsTrigger value="history">
             My Votes ({myVotes.length})
+          </TabsTrigger>
+          <TabsTrigger value="founders" onClick={() => fetchFounderApps()}>
+            Founder Applications ({founderApps.length})
           </TabsTrigger>
         </TabsList>
 
@@ -573,11 +524,17 @@ export default function JuryDashboard() {
               <Skeleton className="h-40 w-full" />
             </div>
           ) : applications.length === 0 ? (
-            <EmptyState
-              icon={<CheckCircle2 className="h-7 w-7 text-success" />}
-              title="All Caught Up"
-              description="No applications pending review at this time. New applications will appear here once submitted."
-            />
+            <Card>
+              <CardContent className="py-12 text-center">
+                <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-text-primary mb-2">
+                  All Caught Up
+                </h3>
+                <p className="text-text-secondary">
+                  No applications pending review at this time.
+                </p>
+              </CardContent>
+            </Card>
           ) : (
             applications.map((app) => {
               const displayed = displayApp(app);
@@ -633,7 +590,7 @@ export default function JuryDashboard() {
                       </div>
                     </div>
 
-                    <div ref={applications.length > 0 && applications[0].id === app.id ? voteRef : undefined} className="flex gap-3 pt-2">
+                    <div className="flex gap-3 pt-2">
                       {alreadyVoted ? (
                         <Badge variant="secondary" className="px-4 py-1.5">
                           Already Voted
@@ -679,11 +636,11 @@ export default function JuryDashboard() {
               <Skeleton className="h-40 w-full" />
             </div>
           ) : allApplications.filter(a => a.status === "Approved").length === 0 ? (
-            <EmptyState
-              icon={<CheckCircle2 className="h-7 w-7 text-text-muted" />}
-              title="No Approved Applications"
-              description="Applications approved by the jury will appear here. Vote on pending applications first."
-            />
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-text-secondary">No approved applications yet.</p>
+              </CardContent>
+            </Card>
           ) : (
             allApplications.filter(a => a.status === "Approved").map((app) => {
               const displayed = displayApp(app);
@@ -729,11 +686,11 @@ export default function JuryDashboard() {
 
         <TabsContent value="history" className="space-y-4">
           {myVotes.length === 0 ? (
-            <EmptyState
-              icon={<CheckCircle2 className="h-7 w-7 text-text-muted" />}
-              title="No Votes Yet"
-              description="You haven't cast any votes. Review pending applications and cast your first vote."
-            />
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-text-secondary">You haven&apos;t voted yet.</p>
+              </CardContent>
+            </Card>
           ) : (
             myVotes.map((vote, i) => (
               <Card key={i}>
@@ -761,6 +718,113 @@ export default function JuryDashboard() {
                 </CardContent>
               </Card>
             ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="founders" className="space-y-4">
+          {founderAppsLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-40 w-full" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ) : founderApps.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-text-primary mb-2">
+                  No Pending Founder Applications
+                </h3>
+                <p className="text-text-secondary">
+                  All founder applications have been reviewed.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            founderApps.map((app) => {
+              const socials = (app as any).socials ? (() => { try { return JSON.parse((app as any).socials); } catch { return null; } })() : null;
+              return (
+              <Card key={app.id}>
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle>{app.name || app.user?.displayName || "Anonymous Founder"}</CardTitle>
+                      <CardDescription>
+                        Applied {new Date(app.createdAt).toLocaleDateString()} &middot;{" "}
+                        Asking {formatXLM(stroopsToXLM(BigInt(app.askAmount)))} XLM
+                      </CardDescription>
+                    </div>
+                    <Badge variant="warning"><Clock className="mr-1 h-3 w-3" /> Pending</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <p className="text-sm text-text-muted mb-1">Product Description</p>
+                    <p className="text-text-primary whitespace-pre-wrap">{app.pitch}</p>
+                  </div>
+                  {app.milestones && app.milestones.length > 0 && (
+                    <div>
+                      <p className="text-sm text-text-muted mb-1">Milestones</p>
+                      <div className="space-y-1">
+                        {app.milestones.map((ms) => (
+                          <div key={ms.id} className="flex justify-between text-sm bg-card-hover rounded px-3 py-1.5">
+                            <span className="text-text-primary">{ms.description}</span>
+                            <span className="text-text-secondary font-mono">{formatXLM(stroopsToXLM(BigInt(ms.amount)))} XLM</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {app.experience && (
+                    <div>
+                      <p className="text-sm text-text-muted mb-1">Experience & Traction</p>
+                      <p className="text-text-primary whitespace-pre-wrap">{app.experience}</p>
+                    </div>
+                  )}
+                  {(app as any).website || socials ? (
+                    <div>
+                      <p className="text-sm text-text-muted mb-1">Links</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(app as any).website && (
+                          <a href={(app as any).website} target="_blank" rel="noopener noreferrer" className="text-xs text-mint hover:underline">Website</a>
+                        )}
+                        {socials?.twitter && (
+                          <a href={socials.twitter} target="_blank" rel="noopener noreferrer" className="text-xs text-mint hover:underline">Twitter</a>
+                        )}
+                        {socials?.github && (
+                          <a href={socials.github} target="_blank" rel="noopener noreferrer" className="text-xs text-mint hover:underline">GitHub</a>
+                        )}
+                        {socials?.linkedin && (
+                          <a href={socials.linkedin} target="_blank" rel="noopener noreferrer" className="text-xs text-mint hover:underline">LinkedIn</a>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div>
+                    <p className="text-sm text-text-muted mb-1">Wallet</p>
+                    <p className="text-sm font-mono text-text-secondary">{formatAddress(app.wallet)}</p>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <Button
+                      variant="success"
+                      onClick={() => handleFounderApprove(app.id)}
+                      disabled={founderActionId === app.id}
+                    >
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      {founderActionId === app.id ? "Processing..." : "Approve"}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => handleFounderReject(app.id)}
+                      disabled={founderActionId === app.id}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      {founderActionId === app.id ? "Processing..." : "Reject"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+            })
           )}
         </TabsContent>
       </Tabs>
@@ -820,20 +884,6 @@ export default function JuryDashboard() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {coach.isActive && coach.currentStepData && (
-        <CoachMark
-          isOpen={coach.isActive}
-          onClose={coach.dismiss}
-          onNext={coach.next}
-          title={coach.currentStepData.title}
-          description={coach.currentStepData.description}
-          targetRef={coach.currentStepData.targetRef}
-          position={coach.currentStepData.position}
-          step={coach.currentStep ?? 0}
-          totalSteps={coach.totalSteps}
-        />
-      )}
     </div>
   );
 }

@@ -16,20 +16,19 @@ import { useState, useEffect, useMemo } from "react";
 const ROLE_NAV: Record<UserRole, Array<{ href: string; label: string }>> = {
   founder: [
     { href: "/startup", label: "Dashboard" },
-    { href: "/startup/apply", label: "Apply" },
-  ],
-  investor: [
-    { href: "/investor", label: "Dashboard" },
   ],
   jury: [
     { href: "/jury", label: "Dashboard" },
   ],
+  investor: [
+    { href: "/investor", label: "Dashboard" },
+  ],
 };
 
 const GUEST_LINKS = [
-  { href: "/for/startups", label: "Startup" },
+  { href: "/for/startups", label: "Startups" },
   { href: "/for/jury", label: "Jury" },
-  { href: "/for/investors", label: "Investor" },
+  { href: "/for/investors", label: "Investors" },
 ];
 
 export function Navbar() {
@@ -141,6 +140,12 @@ export function Navbar() {
         <div className="flex items-center gap-3">
           {address ? (
             <>
+              <Link
+                href="/account"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-border-strong bg-background/50 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-white/5 transition-colors"
+              >
+                Account
+              </Link>
               <button
                 onClick={handleFund}
                 disabled={funding}

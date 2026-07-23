@@ -144,11 +144,13 @@ model User {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  refreshTokens    RefreshToken[]
-  juryApplications JuryApplication[]
-  authEvents       AuthEvent[]
-  auditLogsAsActor AuditLog[] @relation("AuditActor")
-  auditLogsAsTarget AuditLog[] @relation("AuditTarget")
+  refreshTokens        RefreshToken[]
+  juryApplications     JuryApplication[]
+  founderApplications  FounderApplication[]
+  investorApplications InvestorApplication[]
+  authEvents           AuthEvent[]
+  auditLogsAsActor     AuditLog[] @relation("AuditActor")
+  auditLogsAsTarget    AuditLog[] @relation("AuditTarget")
 
   @@index([role])
   @@index([onboardingStatus])
@@ -264,6 +266,56 @@ model JuryApplication {
   @@index([userId])
   @@index([wallet])
   @@map("pending_jury_applications")
+}
+
+/// pending_founder_application — not an active role until a juror approves
+model FounderApplication {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  wallet       String
+  /// pending | approved | rejected
+  status       String    @default("pending")
+  pitch        String
+  experience   String?
+  reviewedBy   String?   @map("reviewed_by")
+  reviewedAt   DateTime? @map("reviewed_at")
+  rejectReason String?   @map("reject_reason")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([userId])
+  @@index([wallet])
+  @@map("pending_founder_applications")
+}
+
+/// pending_investor_application — not an active role until admin approves
+model InvestorApplication {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  wallet           String
+  /// pending | approved | rejected
+  status           String    @default("pending")
+  fullName         String    @map("full_name")
+  entityType       String?   @map("entity_type")
+  accreditation    String?
+  aum              String?
+  sourceOfFunds    String?   @map("source_of_funds")
+  portfolioDesc    String?   @map("portfolio_desc")
+  reviewedBy       String?   @map("reviewed_by")
+  reviewedAt       DateTime? @map("reviewed_at")
+  rejectReason     String?   @map("reject_reason")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([userId])
+  @@index([wallet])
+  @@map("pending_investor_applications")
 }
 
 model Notification {

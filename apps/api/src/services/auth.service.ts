@@ -23,8 +23,6 @@ import {
 import { REFRESH_TOKEN_TTL_MS } from "../lib/cookies.js";
 import {
   dashboardPathForRole,
-  isSelfSelectableRole,
-  type SelfSelectableRole,
   type UserRole,
 } from "../lib/roles.js";
 import { sanitizeText, sanitizeOptional } from "../lib/sanitize.js";
@@ -313,60 +311,18 @@ export async function loginWithWallet(
   return { user: toAuthUser(user), tokens, isNewUser };
 }
 
+/**
+ * Role self-selection is disabled. Jury is the only role and requires
+ * admin approval via the application flow. This endpoint always rejects.
+ */
 export async function selectRole(
-  userId: string,
-  role: SelfSelectableRole,
-  meta?: { ip?: string | null },
+  _userId: string,
+  _role: string,
+  _meta?: { ip?: string | null },
 ): Promise<{ user: AuthUser; tokens: TokenPair }> {
-  if (!isSelfSelectableRole(role)) {
-    throw new ValidationError(
-      "Invalid role. Self-selectable roles are founder or investor only.",
-    );
-  }
-
-  const user = await userRepo.findById(userId);
-  if (!user) {
-    throw new UnauthorizedError(GENERIC_AUTH_FAILURE);
-  }
-
-  if (user.role) {
-    throw new ConflictError(
-      "Role is immutable once set. Contact admin to change roles.",
-    );
-  }
-
-  if (user.wallet) {
-    const existing = await userRepo.findByWallet(user.wallet);
-    if (existing && existing.id !== userId && existing.role) {
-      throw new ConflictError(
-        "This identity already has an active role of a different type.",
-      );
-    }
-  }
-
-  if (user.email) {
-    const existing = await userRepo.findByEmail(user.email);
-    if (existing && existing.id !== userId && existing.role) {
-      throw new ConflictError(
-        "This identity already has an active role of a different type.",
-      );
-    }
-  }
-
-  const updated = await userRepo.setRole(userId, role);
-  const tokens = await issueTokens(updated);
-
-  await auditRepo.append({
-    action: "role_selected",
-    actorId: userId,
-    targetId: userId,
-    oldRole: null,
-    newRole: role,
-    ip: meta?.ip,
-  });
-
-  log.info({ userId, role }, "Role selected");
-  return { user: toAuthUser(updated), tokens };
+  throw new ForbiddenError(
+    "Role self-selection is disabled. Apply for jury access instead.",
+  );
 }
 
 export async function completeProfile(

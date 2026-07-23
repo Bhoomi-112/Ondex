@@ -6,6 +6,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -36,19 +37,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const loggedInRef = useRef(false);
 
   const refreshUser = useCallback(async () => {
     try {
       const { user: me } = await fetchMe();
-      setUser(me);
+      if (!loggedInRef.current) setUser(me);
       return me;
     } catch {
       try {
         const { user: me } = await refreshSession();
-        setUser(me);
+        if (!loggedInRef.current) setUser(me);
         return me;
       } catch {
-        setUser(null);
+        if (!loggedInRef.current) setUser(null);
         return null;
       }
     }
@@ -117,16 +119,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           : err instanceof Error
             ? err.message
             : "Wallet signing cancelled or failed";
-      if (msg.includes("internal error") || msg.includes("parse")) {
-        console.warn(
-          "Challenge XDR may be invalid. Prefix (40 chars):",
-          challenge?.slice(0, 40),
-          "Length:",
-          challenge?.length,
-          "Network:",
-          passphrase,
-        );
-      }
       throw new Error(msg);
     }
 
@@ -136,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         challenge,
         signedTx: signed.signedTxXdr,
       });
+      loggedInRef.current = true;
       setUser(authed);
       return authed;
     } catch (err) {
@@ -151,6 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [address, connect, signTransaction]);
 
   const logout = useCallback(async () => {
+    loggedInRef.current = false;
     setUser(null);
     try {
       await logoutSession();

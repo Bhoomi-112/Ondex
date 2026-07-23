@@ -166,3 +166,15 @@ export async function rejectApplication(
 export function isAdminWallet(wallet: string | null | undefined): boolean {
   return !!wallet && wallet === config.adminAddress;
 }
+
+export async function getApplicationStatus(userId: string) {
+  const app = await juryAppRepo.findAnyByUser(userId);
+  if (!app) return null;
+  return {
+    id: app.id,
+    status: app.status,
+    createdAt: app.createdAt,
+    reviewedAt: app.reviewedAt,
+    rejectReason: app.rejectReason,
+  };
+}

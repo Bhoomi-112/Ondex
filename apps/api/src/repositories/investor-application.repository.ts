@@ -1,45 +1,52 @@
 import { prisma } from "../lib/db.js";
-import type { JuryApplicationStatus } from "../lib/roles.js";
 
 export async function create(data: {
   userId: string;
   wallet: string;
-  statement: string;
-  experience?: string | null;
+  fullName: string;
+  entityType?: string | null;
+  accreditation?: string | null;
+  aum?: string | null;
+  sourceOfFunds?: string | null;
+  portfolioDesc?: string | null;
 }) {
-  return prisma.juryApplication.create({
+  return prisma.investorApplication.create({
     data: {
       userId: data.userId,
       wallet: data.wallet,
-      statement: data.statement,
-      experience: data.experience ?? null,
+      fullName: data.fullName,
+      entityType: data.entityType ?? null,
+      accreditation: data.accreditation ?? null,
+      aum: data.aum ?? null,
+      sourceOfFunds: data.sourceOfFunds ?? null,
+      portfolioDesc: data.portfolioDesc ?? null,
       status: "pending",
     },
   });
 }
 
 export async function findById(id: string) {
-  return prisma.juryApplication.findUnique({
+  return prisma.investorApplication.findUnique({
     where: { id },
     include: { user: true },
   });
 }
 
 export async function findPendingByUser(userId: string) {
-  return prisma.juryApplication.findFirst({
+  return prisma.investorApplication.findFirst({
     where: { userId, status: "pending" },
   });
 }
 
 export async function findAnyByUser(userId: string) {
-  return prisma.juryApplication.findFirst({
+  return prisma.investorApplication.findFirst({
     where: { userId },
     orderBy: { createdAt: "desc" },
   });
 }
 
-export async function listByStatus(status?: JuryApplicationStatus) {
-  return prisma.juryApplication.findMany({
+export async function listByStatus(status?: "pending" | "approved" | "rejected") {
+  return prisma.investorApplication.findMany({
     where: status ? { status } : undefined,
     include: { user: true },
     orderBy: { createdAt: "desc" },
@@ -49,12 +56,12 @@ export async function listByStatus(status?: JuryApplicationStatus) {
 export async function setStatus(
   id: string,
   data: {
-    status: JuryApplicationStatus;
+    status: "pending" | "approved" | "rejected";
     reviewedBy: string;
     rejectReason?: string | null;
   },
 ) {
-  return prisma.juryApplication.update({
+  return prisma.investorApplication.update({
     where: { id },
     data: {
       status: data.status,
