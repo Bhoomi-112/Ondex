@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: ondex-api
+    runtime: node
+    repo: https://github.com/Bhoomi-112/Ondex
+    branch: main
+    buildCommand: pnpm --filter @ondex/api build
+    startCommand: bash apps/api/start.sh
+    healthCheckPath: /api/v1/auth/csrf
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ondex-db
+          property: connectionString
+      - key: CORS_ORIGINS
+        value: https://your-frontend-url.vercel.app
+      - key: SOROBAN_RPC_URL
+        sync: false
+      - key: HORIZON_URL
+        sync: false
+      - key: SOROBAN_NETWORK_PASSPHRASE
+        sync: false
+      - key: EXPLORER_BASE_URL
+        sync: false
+      - key: NETWORK_NAME
+        sync: false
+      - key: ADMIN_ADDRESS
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      - key: MFA_ENCRYPTION_KEY
+        sync: false
+
+databases:
+  - name: ondex-db
+    databaseName: ondex
+    region: oregon

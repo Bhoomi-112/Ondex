@@ -125,12 +125,12 @@ export function getIdentityClient(
  */
 export function apiUrl(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
+  if (typeof window !== "undefined") {
+    return p;
+  }
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (configured) {
     return `${configured.replace(/\/$/, "")}${p}`;
-  }
-  if (typeof window !== "undefined") {
-    return p;
   }
   return `http://localhost:3001${p}`;
 }
