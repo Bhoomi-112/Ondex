@@ -1,22 +1,5 @@
-<<<<<<< Updated upstream
-import { TransactionBuilder, Networks, Horizon, rpc, Account } from "@stellar/stellar-sdk";
-
-const HORIZON_URL = "https://horizon-testnet.stellar.org";
-const RPC_URL = "https://soroban-testnet.stellar.org";
-const FRIENDBOT_URL = "https://friendbot.stellar.org";
-
-export const horizonServer = new Horizon.Server(HORIZON_URL);
-export const rpcServer = new rpc.Server(RPC_URL);
-=======
-import {
-  TransactionBuilder,
-  Horizon,
-  rpc,
-  Transaction,
-} from "@stellar/stellar-sdk";
-import type { AssembledTransaction } from "@stellar/stellar-sdk/contract";
+import { TransactionBuilder, Horizon, rpc } from "@stellar/stellar-sdk";
 import { getNetworkConfig, explorerTxUrl, explorerContractUrl } from "./contracts";
->>>>>>> Stashed changes
 
 interface TxResult {
   hash: string;
@@ -24,21 +7,25 @@ interface TxResult {
   successful: boolean;
 }
 
-export async function submitTransaction(
-  signedXdr: string,
-): Promise<TxResult> {
-  const transaction = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
+function horizonServer(): Horizon.Server {
+  return new Horizon.Server(getNetworkConfig().horizonUrl);
+}
 
-  const response = await rpcServer.sendTransaction(transaction);
+function rpcServer(): rpc.Server {
+  return new rpc.Server(getNetworkConfig().rpcUrl);
+}
+
+export async function submitTransaction(signedXdr: string): Promise<TxResult> {
+  const { networkPassphrase } = getNetworkConfig();
+  const transaction = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
+  const response = await rpcServer().sendTransaction(transaction);
 
   if (response.status === "PENDING") {
     return await pollTxResult(response.hash);
   }
 
   if (response.status === "ERROR") {
-    throw new Error(
-      `Transaction failed: ${JSON.stringify(response)}`
-    );
+    throw new Error(`Transaction failed: ${JSON.stringify(response)}`);
   }
 
   return {
@@ -48,11 +35,13 @@ export async function submitTransaction(
   };
 }
 
-async function pollTxResult(hash: string, maxAttempts = 30): Promise<TxResult> {
+async function pollTxResult(
+  hash: string,
+  maxAttempts = 30,
+): Promise<TxResult> {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    const response = await rpcServer.getTransaction(hash);
+    const response = await rpcServer().getTransaction(hash);
 
     if (response.status === "SUCCESS") {
       return {
@@ -64,7 +53,7 @@ async function pollTxResult(hash: string, maxAttempts = 30): Promise<TxResult> {
 
     if (response.status === "FAILED") {
       throw new Error(
-        `Transaction failed on-chain: ${JSON.stringify(response)}`
+        `Transaction failed on-chain: ${JSON.stringify(response)}`,
       );
     }
   }
@@ -73,7 +62,15 @@ async function pollTxResult(hash: string, maxAttempts = 30): Promise<TxResult> {
 }
 
 export async function fundTestnetAccount(address: string): Promise<string> {
-  const response = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(address)}`);
+  const friendbot = process.env.NEXT_PUBLIC_FRIENDBOT_URL;
+  if (!friendbot) {
+    throw new Error(
+      "NEXT_PUBLIC_FRIENDBOT_URL is not set. Cannot fund account.",
+    );
+  }
+  const response = await fetch(
+    `${friendbot.replace(/\/$/, "")}?addr=${encodeURIComponent(address)}`,
+  );
 
   if (!response.ok) {
     const text = await response.text();
@@ -83,16 +80,16 @@ export async function fundTestnetAccount(address: string): Promise<string> {
     throw new Error(`Friendbot funding failed: ${text}`);
   }
 
-  const data = await response.json();
-  const hash = data?.result?.successful
-    ? data.result.hash
-    : data?.hash || "unknown";
-  return hash;
+  const data = (await response.json()) as {
+    result?: { successful?: boolean; hash?: string };
+    hash?: string;
+  };
+  return data?.result?.hash || data?.hash || "unknown";
 }
 
 export async function checkAccountExists(address: string): Promise<boolean> {
   try {
-    const account = await rpcServer.getAccount(address);
+    const account = await rpcServer().getAccount(address);
     return !!account;
   } catch {
     return false;
@@ -100,16 +97,20 @@ export async function checkAccountExists(address: string): Promise<boolean> {
 }
 
 export function getExplorerUrl(hash: string): string {
-  return `https://stellar.expert/explorer/testnet/tx/${hash}`;
+  return explorerTxUrl(hash);
 }
 
 export function getContractExplorerUrl(contractId: string): string {
-  return `https://stellar.expert/explorer/testnet/contract/${contractId}`;
+  return explorerContractUrl(contractId);
 }
 
 function isBadSeqError(err: unknown): boolean {
   const msg = String(err);
-  return msg.includes("txBadSeq") || msg.includes("txbad_seq") || msg.includes("-5");
+  return (
+    msg.includes("txBadSeq") ||
+    msg.includes("txbad_seq") ||
+    msg.includes("-5")
+  );
 }
 
 export async function buildSignSubmit(
@@ -131,53 +132,6 @@ export async function buildSignSubmit(
       if (!isBadSeqError(err)) throw err;
     }
   }
-  throw lastError;
-}
-<<<<<<< Updated upstream
-=======
-
-/**
- * Sign and send a Soroban transaction that requires auth (e.g. `requireAuth()`).
- * Unlike `buildSignSubmit`, this properly handles Soroban auth entry signing
- * by using `AssembledTransaction.signAndSend()` with Freighter as the wallet.
- */
-export async function signAndSendSorobanTx<A>(
-  assembled: AssembledTransaction<A>,
-  signTx: (
-    xdr: string,
-    opts?: { networkPassphrase?: string; address?: string },
-  ) => Promise<{ signedTxXdr: string }>,
-  address: string,
-  maxRetries = 2,
-): Promise<TxResult> {
-  const { networkPassphrase } = getNetworkConfig();
-
-  const signer = async (
-    tx: Transaction,
-    opts?: { networkPassphrase?: string; address?: string },
-  ) => {
-    const xdr = tx.toXDR();
-    const result = await signTx(xdr, {
-      networkPassphrase: opts?.networkPassphrase ?? networkPassphrase,
-      address: opts?.address ?? address,
-    });
-    return result.signedTxXdr;
-  };
-
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-    try {
-      const sent = await (assembled.signAndSend as any)({ signTransaction: signer });
-      const hash = typeof sent.hash === "string" ? sent.hash : sent.hash.toString();
-      return { hash, ledger: sent.ledger ?? 0, successful: true };
-    } catch (err: unknown) {
-      lastError = err;
-      if (!isBadSeqError(err)) throw err;
-    }
-  }
   throw lastError instanceof Error
     ? lastError
     : new Error(String(lastError));
@@ -185,4 +139,3 @@ export async function signAndSendSorobanTx<A>(
 
 // Avoid unused import if Horizon only used in helper
 void horizonServer;
->>>>>>> Stashed changes
