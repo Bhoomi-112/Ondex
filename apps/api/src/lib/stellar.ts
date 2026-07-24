@@ -1,7 +1,8 @@
-import { rpc } from "@stellar/stellar-sdk";
+import { rpc, Horizon } from "@stellar/stellar-sdk";
 import { config } from "../config.js";
 
 export const rpcClient = new rpc.Server(config.sorobanRpcUrl);
+export const horizonServer = new Horizon.Server(config.horizonUrl);
 
 export async function checkRpcConnection(): Promise<boolean> {
   try {

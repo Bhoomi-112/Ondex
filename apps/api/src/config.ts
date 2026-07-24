@@ -18,6 +18,9 @@ export type AppConfig = {
   authRateLimitMax: number;
   adminAddress: string;
   secretsBackend: string;
+  aiAgentSecretKey: string;
+  aiAgentPublicKey: string;
+  uploadDir: string;
   contracts: {
     escrow?: string;
     juryRegistry?: string;
@@ -101,6 +104,9 @@ export function loadConfig(): AppConfig {
     authRateLimitMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX || "30", 10),
     adminAddress: requireEnv("ADMIN_ADDRESS"),
     secretsBackend: process.env.SECRETS_BACKEND || "env",
+    aiAgentSecretKey: requireEnv("AI_AGENT_SECRET_KEY"),
+    aiAgentPublicKey: requireEnv("AI_AGENT_PUBLIC_KEY"),
+    uploadDir: process.env.UPLOAD_DIR || path.resolve(process.cwd(), "uploads"),
     contracts: {
       escrow:
         optionalEnv("ESCROW_CONTRACT_ID") || fromJson.escrow,

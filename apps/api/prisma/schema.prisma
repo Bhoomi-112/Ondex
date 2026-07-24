@@ -318,6 +318,9 @@ model Application {
 
   user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   milestones    ApplicationMilestone[]
+  votes         ApplicationVote[]
+  documents     StartupDocument[]
+  aiEvaluations AiEvaluation[]
 
   @@index([userId])
   @@index([wallet])
@@ -337,4 +340,63 @@ model ApplicationMilestone {
 
   @@unique([applicationId, idx])
   @@map("application_milestones")
+}
+
+model ApplicationVote {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @map("application_id")
+  voter         String
+  approve       Boolean
+  commentHash   String      @default("") @map("comment_hash")
+  timestamp     DateTime    @default(now())
+
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@unique([applicationId, voter])
+  @@index([voter])
+  @@map("application_votes")
+}
+
+model StartupDocument {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @map("application_id")
+  fileName      String      @map("file_name")
+  fileType      String      @map("file_type")
+  filePath      String      @map("file_path")
+  fileSize      Int         @map("file_size")
+  category      String      @default("other")
+  uploadedAt    DateTime    @default(now()) @map("uploaded_at")
+
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@index([applicationId])
+  @@map("startup_documents")
+}
+
+model AiEvaluation {
+  id                Int         @id @default(autoincrement())
+  caseId            Int         @unique @map("case_id")
+  applicationId     Int         @map("application_id")
+  aiAgentAddress    String      @map("ai_agent_address")
+  status            String      @default("pending")
+  score             Int?
+  verdict           String?
+  confidenceScore   Float?      @map("confidence_score")
+  webPresenceScore  Int?        @map("web_presence_score")
+  newsSentiment     String?     @map("news_sentiment")
+  companyVerified   Boolean?    @map("company_verified")
+  documentScore     Int?        @map("document_score")
+  evidenceReport    String?     @map("evidence_report")
+  errorMessage      String?     @map("error_message")
+  txHash            String?     @map("tx_hash")
+  startedAt         DateTime?   @map("started_at")
+  completedAt       DateTime?   @map("completed_at")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  application       Application @relation(fields: [applicationId], references: [id])
+
+  @@index([status])
+  @@index([applicationId])
+  @@map("ai_evaluations")
 }
