@@ -19,7 +19,7 @@ initialize(
 ```
 
 First Testnet deploy intended args (passed at deploy time, not in source):  
-`min_xlm_stake=100`, `min_platform_stake=100`, `jury_size=5`, `quorum=3`, `slash_pct` as admin chooses.
+`min_xlm_stake=10`, `min_platform_stake=100`, `jury_size=5`, `quorum=3`, `slash_pct` as admin chooses.
 
 ## Admin setters
 

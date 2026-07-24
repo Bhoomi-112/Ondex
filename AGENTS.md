@@ -82,7 +82,7 @@ FINALIZED DESIGN DECISIONS (do not deviate without explicit user sign-off):
 
 - Jury economics: REAL STAKING + SLASHING. Jurors stake real assets
   (native XLM SAC + platform SAC token). Minimum stakes are admin-set on
-  chain (first Testnet init intended: 100 XLM + 100 platform units as
+  chain (first Testnet init intended: 10 XLM + 100 platform units as
   deploy-time args, not source constants). Jurors are admin-assigned (not
   random). Slash percentage is admin-configured on chain (not hardcoded).
   Slashed funds transfer to the on-chain treasury address.

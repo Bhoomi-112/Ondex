@@ -83,7 +83,7 @@ export function loadConfig(): AppConfig {
   const fromJson = loadContractsFromJson();
 
   return {
-    port: parseInt(requireEnv("PORT"), 10),
+    port: parseInt(process.env.PORT || "3001", 10),
     databaseUrl: requireEnv("DATABASE_URL"),
     sorobanRpcUrl: requireEnv("SOROBAN_RPC_URL"),
     horizonUrl: requireEnv("HORIZON_URL"),

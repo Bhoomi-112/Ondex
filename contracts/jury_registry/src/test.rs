@@ -84,7 +84,7 @@ fn setup_with_params(
 
 fn default_setup() -> Setup {
     // Injected params — not contract constants
-    setup_with_params(100, 100, 3, 2, 50)
+    setup_with_params(10, 100, 3, 2, 50)
 }
 
 fn register_all(s: &Setup, xlm: i128, platform: i128) {
@@ -100,7 +100,7 @@ fn test_initialize_and_config() {
     assert_eq!(s.client.get_slash_pct(), 50);
     assert_eq!(s.client.get_jury_size(), 3);
     assert_eq!(s.client.get_quorum(), 2);
-    assert_eq!(s.client.get_min_stakes(), (100, 100));
+    assert_eq!(s.client.get_min_stakes(), (10, 100));
 }
 
 #[test]
@@ -109,16 +109,16 @@ fn test_register_transfers_tokens() {
     let xlm_client = token::Client::new(&s.env, &s.xlm);
     let before = xlm_client.balance(&s.juror1);
 
-    s.client.register(&s.juror1, &100, &100);
+    s.client.register(&s.juror1, &10, &100);
 
     assert!(s.client.is_reg(&s.juror1));
-    assert_eq!(xlm_client.balance(&s.juror1), before - 100);
+    assert_eq!(xlm_client.balance(&s.juror1), before - 10);
     assert_eq!(
         xlm_client.balance(&s.client.address),
-        100
+        10
     );
     let stakes = s.client.juror_stake(&s.juror1);
-    assert_eq!(stakes.xlm, 100);
+    assert_eq!(stakes.xlm, 10);
     assert_eq!(stakes.platform, 100);
 }
 
@@ -126,21 +126,21 @@ fn test_register_transfers_tokens() {
 #[should_panic(expected = "stake below minimum")]
 fn test_register_below_min() {
     let s = default_setup();
-    s.client.register(&s.juror1, &50, &100);
+    s.client.register(&s.juror1, &5, &100);
 }
 
 #[test]
 #[should_panic(expected = "already registered")]
 fn test_register_duplicate() {
     let s = default_setup();
-    s.client.register(&s.juror1, &100, &100);
-    s.client.register(&s.juror1, &100, &100);
+    s.client.register(&s.juror1, &10, &100);
+    s.client.register(&s.juror1, &10, &100);
 }
 
 #[test]
 fn test_assign_and_vote_majority_for() {
     let s = default_setup();
-    register_all(&s, 100, 100);
+    register_all(&s, 10, 100);
 
     let mut jurors = Vec::new(&s.env);
     jurors.push_back(s.juror1.clone());
@@ -163,7 +163,7 @@ fn test_assign_and_vote_majority_for() {
 #[test]
 fn test_vote_majority_against_not_approved() {
     let s = default_setup();
-    register_all(&s, 100, 100);
+    register_all(&s, 10, 100);
 
     let mut jurors = Vec::new(&s.env);
     jurors.push_back(s.juror1.clone());
@@ -181,8 +181,8 @@ fn test_vote_majority_against_not_approved() {
 
 #[test]
 fn test_dispute_and_slash_uses_admin_pct() {
-    let s = setup_with_params(100, 100, 3, 2, 25);
-    register_all(&s, 100, 100);
+    let s = setup_with_params(10, 100, 3, 2, 25);
+    register_all(&s, 10, 100);
 
     let mut jurors = Vec::new(&s.env);
     jurors.push_back(s.juror1.clone());
@@ -203,9 +203,9 @@ fn test_dispute_and_slash_uses_admin_pct() {
     s.client.slash(&0, &s.juror3);
 
     let stakes = s.client.juror_stake(&s.juror3);
-    assert_eq!(stakes.xlm, 75);
+    assert_eq!(stakes.xlm, 8);
     assert_eq!(stakes.platform, 75);
-    assert_eq!(xlm_client.balance(&s.treasury), treasury_before + 25);
+    assert_eq!(xlm_client.balance(&s.treasury), treasury_before + 2);
 
     let result = s.client.get_case(&0);
     assert_eq!(result.status, CaseStatus::Slashed);
@@ -222,7 +222,7 @@ fn test_admin_set_slash_pct() {
 #[should_panic(expected = "dispute window closed")]
 fn test_dispute_after_window() {
     let s = default_setup();
-    register_all(&s, 100, 100);
+    register_all(&s, 10, 100);
 
     let mut jurors = Vec::new(&s.env);
     jurors.push_back(s.juror1.clone());
@@ -245,7 +245,7 @@ fn test_dispute_after_window() {
 #[should_panic(expected = "juror count must equal jury_size")]
 fn test_assign_wrong_count() {
     let s = default_setup();
-    register_all(&s, 100, 100);
+    register_all(&s, 10, 100);
     let mut jurors = Vec::new(&s.env);
     jurors.push_back(s.juror1.clone());
     s.client.assign(&0, &jurors, &100u64);
