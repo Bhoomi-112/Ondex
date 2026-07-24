@@ -4,7 +4,7 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, token, Address, Env, IntoVal, Map,
 };
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 #[contracttype]
 pub enum EscrowState {
     Active,

@@ -109,7 +109,7 @@ fn open_and_fund(s: &Setup, campaign_id: u32, window: u64, a1: i128, a2: i128) {
 fn set_jury_approved(s: &Setup, case_id: u32, approved: bool, window: u64) {
     s.env.as_contract(&s.jury, || {
         MockJury::set_case(
-            &s.env,
+            s.env.clone(),
             case_id,
             crate::JuryCaseStatus::Resolved,
             approved,

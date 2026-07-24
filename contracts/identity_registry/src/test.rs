@@ -52,7 +52,7 @@ fn setup() -> Setup {
 
 fn set_case(s: &Setup, case_id: u32, status: CaseStatus, approved: bool) {
     s.env.as_contract(&s.jury, || {
-        MockJury::set_case(&s.env, case_id, status, approved);
+        MockJury::set_case(s.env.clone(), case_id, status, approved);
     });
 }
 
