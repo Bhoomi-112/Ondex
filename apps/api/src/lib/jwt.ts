@@ -64,15 +64,27 @@ async function importPrivate(pem: string) {
 async function importPublic(pem: string) {
   const trimmed = pem.trim();
   if (!trimmed.startsWith(SPKI_HEADER)) {
-    // Maybe it's raw base64 without PEM headers — wrap it
-    if (!trimmed.includes("-----") && /^[A-Za-z0-9+/=]+$/.test(trimmed)) {
-      pem = `${SPKI_HEADER}\n${trimmed}\n${SPKI_FOOTER}`;
-    } else {
+    if (trimmed.startsWith(PKCS8_HEADER) || trimmed.startsWith(PKCS1_HEADER) || trimmed.includes("-----")) {
       throw new Error(
-        "JWT_PUBLIC_KEY does not appear to be a valid PEM public key. " +
-          "Expected -----BEGIN PUBLIC KEY----- header.",
+        "JWT_PUBLIC_KEY must be in SPKI format (-----BEGIN PUBLIC KEY-----), " +
+          "not PKCS#8 or PKCS#1. Generate it with: " +
+          "openssl rsa -pubin -in <(openssl pkey -in prv.pem -pubout) -RSAPublicKey_out",
       );
     }
+    if (!trimmed.includes("-----") && /^[A-Za-z0-9+/=]+$/.test(trimmed)) {
+      // Raw base64 — best guess: wrap as SPKI, then try PKCS#1 via Node crypto
+      try {
+        return await jose.importSPKI(`${SPKI_HEADER}\n${trimmed}\n${SPKI_FOOTER}`, "RS256");
+      } catch {
+        const pkcs1Pem = `-----BEGIN RSA PUBLIC KEY-----\n${trimmed}\n-----END RSA PUBLIC KEY-----`;
+        const pub = createPublicKey(pkcs1Pem).export({ type: "spki", format: "pem" }) as string;
+        return jose.importSPKI(pub, "RS256");
+      }
+    }
+    throw new Error(
+      "JWT_PUBLIC_KEY does not appear to be a valid PEM public key. " +
+        "Expected -----BEGIN PUBLIC KEY----- header.",
+    );
   }
   return jose.importSPKI(pem, "RS256");
 }
