@@ -1,6 +1,8 @@
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import { createLogger } from "../lib/logger.js";
+import { config } from "../config.js";
 import * as caseRepo from "../repositories/case.repository.js";
+import * as aiEvalService from "./ai-evaluation.service.js";
 
 const log = createLogger("CaseService");
 
@@ -62,6 +64,18 @@ export async function processCaseEvent(eventData: any) {
           await caseRepo.addJuror(caseId, juror);
         }
       }
+
+      const aiAgentPublicKey = config.aiAgentPublicKey;
+      const isAiAssigned = Array.isArray(jurors) && jurors.some(
+        (j: string) => j === aiAgentPublicKey,
+      );
+
+      if (isAiAssigned) {
+        aiEvalService.triggerEvaluation(caseId).catch((err) => {
+          log.error({ err, caseId }, "Auto-trigger AI evaluation failed");
+        });
+      }
+
       return;
     }
     case "VOTE": {

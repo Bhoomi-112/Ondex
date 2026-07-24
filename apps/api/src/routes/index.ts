@@ -8,6 +8,7 @@ import jurorsRouter from "./v1/jurors.js";
 import identitiesRouter from "./v1/identities.js";
 import notificationsRouter from "./v1/notifications.js";
 import applicationsRouter from "./applications.js";
+import aiEvalRouter from "./ai-evaluation.js";
 import { generalLimiter, authLimiter } from "../middleware/rate-limiter.js";
 
 export function registerRoutes(app: Express): void {
@@ -28,4 +29,8 @@ export function registerRoutes(app: Express): void {
   app.use("/api/jury", generalLimiter, applicationsRouter);
   app.use("/api/v1/campaigns", generalLimiter, campaignsRouter);
   app.use("/api/campaigns", generalLimiter, campaignsRouter);
+
+  // AI evaluation routes
+  app.use("/api/v1/ai", generalLimiter, aiEvalRouter);
+  app.use("/api/ai", generalLimiter, aiEvalRouter);
 }
