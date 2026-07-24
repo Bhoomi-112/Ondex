@@ -3,7 +3,10 @@ import * as jose from "jose";
 import { getSecret, requireSecret } from "./secrets.js";
 
 const PKCS8_HEADER = "-----BEGIN PRIVATE KEY-----";
+const PKCS8_FOOTER = "-----END PRIVATE KEY-----";
 const PKCS1_HEADER = "-----BEGIN RSA PRIVATE KEY-----";
+const SPKI_HEADER = "-----BEGIN PUBLIC KEY-----";
+const SPKI_FOOTER = "-----END PUBLIC KEY-----";
 import type { UserRole, OnboardingStatus } from "./roles.js";
 
 /** Allowed JWT algorithms — never trust the token's own `alg` header alone. */
@@ -34,25 +37,43 @@ function kidFromPem(pem: string): string {
 }
 
 async function importPrivate(pem: string) {
-  if (pem.startsWith(PKCS1_HEADER)) {
+  const trimmed = pem.trim();
+  if (trimmed.startsWith(PKCS1_HEADER)) {
     throw new Error(
       "JWT_PRIVATE_KEY is PKCS#1 format (-----BEGIN RSA PRIVATE KEY-----). " +
         "Convert to PKCS#8 (-----BEGIN PRIVATE KEY-----) with: " +
         "openssl pkcs8 -topk8 -inform PEM -outform PEM -in rsa_key.pem -out pkcs8_key.pem -nocrypt",
     );
   }
-  if (!pem.startsWith(PKCS8_HEADER)) {
-    throw new Error(
-      "JWT_PRIVATE_KEY does not appear to be a valid PEM private key. " +
-        "Expected -----BEGIN PRIVATE KEY----- header. " +
-        "If using a file path, ensure it starts with file: " +
-        "or points to an existing file (e.g. JWT_PRIVATE_KEY=file:./path/to/key.pem).",
-    );
+  if (!trimmed.startsWith(PKCS8_HEADER)) {
+    // Maybe it's raw base64 without PEM headers — wrap it
+    if (!trimmed.includes("-----") && /^[A-Za-z0-9+/=]+$/.test(trimmed)) {
+      pem = `${PKCS8_HEADER}\n${trimmed}\n${PKCS8_FOOTER}`;
+    } else {
+      throw new Error(
+        "JWT_PRIVATE_KEY does not appear to be a valid PEM private key. " +
+          "Expected -----BEGIN PRIVATE KEY----- header. " +
+          "If using a file path, ensure it starts with file: " +
+          "or points to an existing file (e.g. JWT_PRIVATE_KEY=file:./path/to/key.pem).",
+      );
+    }
   }
   return jose.importPKCS8(pem, "RS256");
 }
 
 async function importPublic(pem: string) {
+  const trimmed = pem.trim();
+  if (!trimmed.startsWith(SPKI_HEADER)) {
+    // Maybe it's raw base64 without PEM headers — wrap it
+    if (!trimmed.includes("-----") && /^[A-Za-z0-9+/=]+$/.test(trimmed)) {
+      pem = `${SPKI_HEADER}\n${trimmed}\n${SPKI_FOOTER}`;
+    } else {
+      throw new Error(
+        "JWT_PUBLIC_KEY does not appear to be a valid PEM public key. " +
+          "Expected -----BEGIN PUBLIC KEY----- header.",
+      );
+    }
+  }
   return jose.importSPKI(pem, "RS256");
 }
 
@@ -183,12 +204,17 @@ export function hashToken(token: string): string {
 export function assertJwtKeysConfigured(): void {
   const priv = requireSecret("JWT_PRIVATE_KEY");
   const pub = requireSecret("JWT_PUBLIC_KEY");
-  if (!priv.startsWith(PKCS8_HEADER)) {
-    if (priv.startsWith(PKCS1_HEADER)) {
+  const privTrimmed = priv.trim();
+  if (!privTrimmed.startsWith(PKCS8_HEADER)) {
+    if (privTrimmed.startsWith(PKCS1_HEADER)) {
       throw new Error(
         "JWT_PRIVATE_KEY is PKCS#1 format. Convert to PKCS#8: " +
           "openssl pkcs8 -topk8 -inform PEM -outform PEM -in rsa_key.pem -out pkcs8_key.pem -nocrypt",
       );
+    }
+    if (!privTrimmed.includes("-----") && /^[A-Za-z0-9+/=]+$/.test(privTrimmed)) {
+      // raw base64 — will be auto-wrapped by importPrivate
+      return;
     }
     throw new Error(
       "JWT_PRIVATE_KEY does not start with -----BEGIN PRIVATE KEY-----. " +
