@@ -32,7 +32,7 @@ export async function createRoleApplication(data: {
           }
         : undefined,
     },
-    include: { milestones: true, user: { select: { id: true, wallet: true, displayName: true } } },
+    include: { milestones: true, user: { select: { id: true, wallet: true, displayName: true, role: true } } },
   });
 }
 
@@ -52,7 +52,7 @@ export async function findAnyByUser(userId: string) {
 export async function findById(id: number) {
   return prisma.application.findUnique({
     where: { id },
-    include: { milestones: true, user: { select: { id: true, wallet: true, displayName: true } } },
+    include: { milestones: true, user: { select: { id: true, wallet: true, displayName: true, role: true } } },
   });
 }
 
@@ -62,7 +62,7 @@ export async function listRoleApplications(status?: string) {
   return prisma.application.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    include: { milestones: true, user: { select: { id: true, wallet: true, displayName: true } } },
+    include: { milestones: true, user: { select: { id: true, wallet: true, displayName: true, role: true } } },
   });
 }
 
