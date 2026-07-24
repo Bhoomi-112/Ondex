@@ -6,8 +6,10 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 
-export const TESTNET_NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
-export const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
+export const NETWORK_PASSPHRASE: string =
+  process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? (() => { throw new Error("NEXT_PUBLIC_NETWORK_PASSPHRASE not set"); })();
+export const SOROBAN_RPC_URL: string =
+  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ?? (() => { throw new Error("NEXT_PUBLIC_SOROBAN_RPC_URL not set"); })();
 
 export const rpcClient = new rpc.Server(SOROBAN_RPC_URL);
 
@@ -24,7 +26,7 @@ export async function buildContractCall(
 
   return new TransactionBuilder(sourceAccount, {
     fee: "100",
-    networkPassphrase: TESTNET_NETWORK_PASSPHRASE,
+    networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(operation)
     .setTimeout(120);

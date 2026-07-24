@@ -8,13 +8,13 @@ A three-sided Web3 startup-funding marketplace on [Stellar](https://stellar.org)
 ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
 │  @ondex/web  │─────▶│  @ondex/api  │─────▶│   Soroban    │
 │  Next.js 15  │      │  Express 5   │      │  Contracts   │
-│  Frontend    │      │  Backend     │      │  (Rust)      │
+│  (Vercel)    │      │  (Render)    │      │  (Rust)      │
 └──────────────┘      └──────┬───────┘      └──────┬───────┘
                              │                     │
-                      ┌──────▼───────┐      ┌──────▼───────┐
-                      │  PostgreSQL  │      │  Stellar     │
-                      │  (off-chain) │      │  Testnet     │
-                      └──────────────┘      └──────────────┘
+                       ┌─────▼────────┐      ┌─────▼────────┐
+                       │  PostgreSQL   │      │  Stellar     │
+                       │  (Render DB)  │      │  Testnet     │
+                       └──────────────┘      └──────────────┘
 ```
 
 ### Monorepo Layout
@@ -27,8 +27,8 @@ ondex/
 │   └── escrow_contract/    # Milestone escrow + dispute resolution
 ├── packages/sdk/           # Auto-generated TypeScript contract bindings
 ├── apps/
-│   ├── web/                # Next.js 15 App Router frontend
-│   └── api/                # Express 5 backend + event indexer
+│   ├── web/                # Next.js 15 App Router frontend (deployed on Vercel)
+│   └── api/                # Express 5 backend + event indexer (deployed on Render)
 └── scripts/                # Deployment & testnet funding scripts
 ```
 
@@ -69,17 +69,17 @@ Key methods: `initialize`, `deposit`, `jury_approved`, `dispute`, `investor_vote
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Smart Contracts | Rust + Soroban SDK 26.1 |
-| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS v4 |
-| Backend | Express 5, TypeScript, Zod, Pino |
-| Database | PostgreSQL via Prisma 7 |
-| Stellar SDK | `@stellar/stellar-sdk` (JS: v16, API: v13) |
-| Wallet | `@creit.tech/stellar-wallets-kit` v2.5 |
-| Auth | SEP-10 Stellar authentication |
-| Testing | Vitest, Playwright, Testing Library |
-| Build | pnpm workspaces, TSX, Cargo |
+| Layer | Technology | Hosting |
+|-------|-----------|---------|
+| Smart Contracts | Rust + Soroban SDK 26.1 | On-chain (Stellar) |
+| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS v4 | Vercel |
+| Backend | Express 5, TypeScript, Zod, Pino | Render |
+| Database | PostgreSQL via Prisma 7 | Render (managed Postgres) |
+| Stellar SDK | `@stellar/stellar-sdk` (JS: v16, API: v13) | — |
+| Wallet | `@creit.tech/stellar-wallets-kit` v2.5 | — |
+| Auth | SEP-10 Stellar authentication | — |
+| Testing | Vitest, Playwright, Testing Library | — |
+| Build | pnpm workspaces, TSX, Cargo | — |
 
 ## Getting Started
 
@@ -89,7 +89,6 @@ Key methods: `initialize`, `deposit`, `jury_approved`, `dispute`, `investor_vote
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://rustup.rs/) with `wasm32v1-none` target
 - [Stellar CLI](https://soroban.stellar.org/docs/getting-started/setup) (`stellar`)
-- [Docker](https://www.docker.com/) or a running PostgreSQL instance
 
 ### Install
 
@@ -107,13 +106,14 @@ Copy the environment template and fill in your values:
 cp .env.example .env
 ```
 
-Required variables:
+For local development, use SQLite (see `.env`). Required variables:
 
 ```env
 DEPLOYER_SECRET=              # Stellar secret key for testnet deployment
 SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
 SOROBAN_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
 HORIZON_URL=https://horizon-testnet.stellar.org
+DATABASE_URL=file:./prisma/dev.db
 ```
 
 ### Build Contracts
@@ -126,28 +126,26 @@ pnpm build:contracts
 pnpm deploy
 ```
 
-### Run Backend
+### Run Backend (Local Dev)
 
 ```bash
 # Set up database
-cd apps/api
-npx prisma generate
-npx prisma db push
+pnpm --filter @ondex/api exec prisma generate
+pnpm --filter @ondex/api exec prisma db push
 
 # Start development server
-pnpm dev
+pnpm --filter @ondex/api dev
 ```
 
-The API runs at `http://localhost:3000` by default.
+The API runs at `http://localhost:3001`.
 
-### Run Frontend
+### Run Frontend (Local Dev)
 
 ```bash
-cd apps/web
-pnpm dev
+pnpm --filter @ondex/web dev
 ```
 
-The frontend runs at `http://localhost:3001` by default.
+The frontend runs at `http://localhost:3000`.
 
 ## API Routes
 
@@ -209,13 +207,62 @@ pnpm test:e2e:ui        # interactive Playwright UI
 - **Jury economics (real staking + slashing):** Jurors stake real assets. Formal disputes can slash 50% of stake for votes contradicting documented majority outcomes.
 - **Chain is source of truth:** Off-chain systems (backend DB) index and cache for querying, but never store funds-relevant state as authoritative.
 
-## Vercel Deployment
+## Deployment
 
-### 1. Connect Repository
+### Backend — Render
+
+The API is deployed to [Render](https://render.com) as a web service, with a managed PostgreSQL database.
+
+#### 1. Create a Render account
+
+Sign up at [render.com](https://render.com) and connect your GitHub account.
+
+#### 2. Set up the database
+
+In the Render dashboard, create a new **PostgreSQL** database. Render automatically exposes a `DATABASE_URL` connection string.
+
+#### 3. Configure the web service
+
+| Setting | Value |
+|---------|-------|
+| **Name** | `ondex-api` |
+| **Runtime** | Node |
+| **Build Command** | `pnpm --filter @ondex/api build` |
+| **Start Command** | `bash apps/api/start.sh` |
+| **Health Check Path** | `/api/v1/auth/csrf` |
+| **Plan** | Free or Starter |
+
+#### 4. Environment Variables
+
+Set these in the Render dashboard (or use `render.yaml` for infrastructure-as-code):
+
+| Variable | Source |
+|----------|--------|
+| `NODE_ENV` | `production` |
+| `PORT` | `3001` |
+| `DATABASE_URL` | Auto-injected by Render when linked to your PostgreSQL instance |
+| `CORS_ORIGINS` | Your frontend URL (e.g. `https://your-app.vercel.app`) |
+| `SOROBAN_RPC_URL` | `https://soroban-testnet.stellar.org` |
+| `HORIZON_URL` | `https://horizon-testnet.stellar.org` |
+| `SOROBAN_NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015` |
+| `EXPLORER_BASE_URL` | `https://stellar.expert/explorer/testnet` |
+| `NETWORK_NAME` | `testnet` |
+| `ADMIN_ADDRESS` | Stellar public key for admin operations |
+| `JWT_PRIVATE_KEY` | RS256 private key (PEM) for session tokens |
+| `JWT_PUBLIC_KEY` | RS256 public key (PEM) for session tokens |
+| `MFA_ENCRYPTION_KEY` | Symmetric key for TOTP secret encryption |
+
+#### 5. Deploy
+
+Push to `main`. Render auto-deploys. The `render.yaml` at the repo root defines the full configuration.
+
+### Frontend — Vercel
+
+#### 1. Connect Repository
 
 Go to [vercel.com/new](https://vercel.com/new), import your GitHub repo, and select `Ondex`.
 
-### 2. Configure Project
+#### 2. Configure Project
 
 | Setting | Value |
 |---------|-------|
@@ -225,7 +272,7 @@ Go to [vercel.com/new](https://vercel.com/new), import your GitHub repo, and sel
 | **Install Command** | `cd ../.. && pnpm install` |
 | **Output Directory** | `.next` |
 
-### 3. Environment Variables
+#### 3. Environment Variables
 
 Set these in the Vercel dashboard under **Settings → Environment Variables**:
 
@@ -234,13 +281,13 @@ Set these in the Vercel dashboard under **Settings → Environment Variables**:
 | `SOROBAN_RPC_URL` | `https://soroban-testnet.stellar.org` |
 | `SOROBAN_NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015` |
 | `HORIZON_URL` | `https://horizon-testnet.stellar.org` |
-| `NEXT_PUBLIC_JURY_REGISTRY_CONTRACT` | (optional) Jury registry contract ID for self-registration |
+| `NEXT_PUBLIC_API_URL` | Your Render API URL (e.g. `https://ondex-api.onrender.com`) |
 
 These must also be declared in `turbo.json` under the `build` task's `env` array (already configured).
 
-### 4. Deploy
+#### 4. Deploy
 
-Push to `main` (or the branch you connected). Vercel will auto-deploy. The `vercel.json` at the repo root configures the build pipeline — only changes to `apps/web/`, `packages/`, or config files trigger a new deployment.
+Push to `main`. Vercel auto-deploys. The `vercel.json` at the repo root configures the build pipeline.
 
 ## License
 

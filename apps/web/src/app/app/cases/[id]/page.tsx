@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator"
 import { api } from "@/lib/api-client"
 import { truncateAddress, formatDate } from "@/lib/utils"
 import { useWalletContext } from "@/components/wallet/wallet-provider"
-import { rpcClient, buildContractCall, TESTNET_NETWORK_PASSPHRASE } from "@/lib/stellar"
+import { rpcClient, buildContractCall, NETWORK_PASSPHRASE } from "@/lib/stellar"
 import { xdr, TransactionBuilder } from "@stellar/stellar-sdk"
 import Link from "next/link"
 import { ArrowLeft, ThumbsUp, ThumbsDown, AlertTriangle } from "lucide-react"
@@ -66,7 +66,7 @@ export default function CaseDetailPage() {
       const voteArg = xdr.ScVal.scvBool(voteFor)
 
       const txBuilder = await buildContractCall(
-        process.env.NEXT_PUBLIC_JURY_REGISTRY_CONTRACT!,
+        process.env.NEXT_PUBLIC_JURY_REGISTRY_CONTRACT_ID!,
         "vote",
         [xdr.ScVal.scvString(caseId), voteArg],
         walletAddress
@@ -76,7 +76,7 @@ export default function CaseDetailPage() {
       const signedXdr = await signXdr(builtTx.toXDR())
 
       const result = await rpcClient.sendTransaction(
-        TransactionBuilder.fromXDR(signedXdr, TESTNET_NETWORK_PASSPHRASE)
+        TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE)
       )
 
       toast({ title: `Vote submitted. Tx: ${result.hash}` })

@@ -19,7 +19,7 @@ import {
 import { api } from "@/lib/api-client"
 import { formatAmount, truncateAddress } from "@/lib/utils"
 import { useWalletContext } from "@/components/wallet/wallet-provider"
-import { rpcClient, buildContractCall, TESTNET_NETWORK_PASSPHRASE } from "@/lib/stellar"
+import { rpcClient, buildContractCall, NETWORK_PASSPHRASE } from "@/lib/stellar"
 import { xdr, TransactionBuilder } from "@stellar/stellar-sdk"
 import { Briefcase, TrendingUp, DollarSign, ArrowUpRight } from "lucide-react"
 
@@ -78,7 +78,7 @@ export default function InvestorDashboard() {
       )
 
       const txBuilder = await buildContractCall(
-        process.env.NEXT_PUBLIC_ESCROW_CONTRACT!,
+        process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID!,
         "deposit",
         [
           xdr.ScVal.scvString(depositDialog.campaign.id),
@@ -92,7 +92,7 @@ export default function InvestorDashboard() {
       const signedXdr = await signXdr(txXdr)
 
       const result = await rpcClient.sendTransaction(
-        TransactionBuilder.fromXDR(signedXdr, TESTNET_NETWORK_PASSPHRASE)
+        TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE)
       )
 
       toast({ title: `Deposit successful. Tx: ${result.hash}` })

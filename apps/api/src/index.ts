@@ -16,18 +16,15 @@ type ContractType = "platform" | "campaign" | "case" | "juror" | "identity";
 
 function buildContractSpecs(): Array<{ contractId: string; type: ContractType }> {
   const specs: Array<{ contractId: string; type: ContractType }> = [];
+  const c = config.contracts;
 
-  const platformId = process.env.PLATFORM_CONTRACT_ID;
-  const campaignId = process.env.CAMPAIGN_CONTRACT_ID;
-  const caseId = process.env.CASE_CONTRACT_ID;
-  const jurorId = process.env.JUROR_CONTRACT_ID;
-  const identityId = process.env.IDENTITY_CONTRACT_ID;
-
-  if (platformId) specs.push({ contractId: platformId, type: "platform" });
-  if (campaignId) specs.push({ contractId: campaignId, type: "campaign" });
-  if (caseId) specs.push({ contractId: caseId, type: "case" });
-  if (jurorId) specs.push({ contractId: jurorId, type: "juror" });
-  if (identityId) specs.push({ contractId: identityId, type: "identity" });
+  if (c.platformToken) specs.push({ contractId: c.platformToken, type: "platform" });
+  if (c.escrow) specs.push({ contractId: c.escrow, type: "campaign" });
+  if (c.juryRegistry) {
+    specs.push({ contractId: c.juryRegistry, type: "case" });
+    specs.push({ contractId: c.juryRegistry, type: "juror" });
+  }
+  if (c.identityRegistry) specs.push({ contractId: c.identityRegistry, type: "identity" });
 
   return specs;
 }
