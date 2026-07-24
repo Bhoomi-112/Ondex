@@ -1,5 +1,8 @@
-You are building Ondex, a three-sided Web3 startup-funding marketplace
-(startups, jury, investors) on Stellar using Soroban smart contracts.
+You are building Ondex, a two-sided Web3 startup-funding marketplace
+(startups, investors) on Stellar using Soroban smart contracts.
+Startups pay; investors browse for free. AI-powered matchmaking connects
+founders with aligned investors. In-platform meetings are scheduled via
+a credit-based system (startups pay meeting credits).
 
 HARD RULES — violating any of these is a failed task, not a shortcut:
 
@@ -32,13 +35,9 @@ HARD RULES — violating any of these is a failed task, not a shortcut:
      done. "It compiles" is not "it works."
 
 4. NO HARDCODED PROTOCOL OR NETWORK VALUES.
-   - Protocol params (min stakes, slash %, jury size, quorum, capital
-     participation threshold, token addresses, treasury, admin) live in
-     on-chain storage. They are set via `initialize` and admin setters —
-     never as magic numbers in contract bodies (`unwrap_or(259200)`,
-     `slash_pct = 50`, fixed jury size 5, etc. are forbidden).
-   - Per-case params (dispute window, assigned jurors) are set by admin at
-     assign/create time and stored on-chain per case.
+   - Protocol params (min stakes, dispute windows, fees, treasury, admin)
+     live in on-chain storage. Set via `initialize` and admin setters —
+     never as magic numbers in contract bodies.
    - Contract IDs: only from generated `contracts.json`.
    - App network config: only from env; fail boot if required vars missing.
    - Allowed fixed values: error messages, event names, math identities
@@ -64,39 +63,34 @@ HARD RULES — violating any of these is a failed task, not a shortcut:
 
 FINALIZED DESIGN DECISIONS (do not deviate without explicit user sign-off):
 
-- Identity masking: HYBRID. On-chain (identity_registry) stores only a
-  hash commitment of each startup/jury identity — never PII. The real KYC
-  record lives off-chain (backend, encrypted at rest) keyed to that hash.
-  Jury votes against the commitment only (blind review). Reveal is a
-  separate contract method, callable only after a vote concludes, and
-  only resolves to a compliance-scoped backend record — never exposes PII
-  on-chain.
+- Identity: On-chain (identity_registry) stores startup profiles (name,
+  industry tags, description, funding ask) and investor profiles
+  (preferences, KYC status). No PII on-chain — KYC records are off-chain
+  in backend, encrypted at rest, keyed to wallet address hash.
 
-- Escrow release: LAYERED. Each funding milestone releases by default on
-  jury sign-off (majority FOR in jury_registry). Release is gated by a
-  per-case dispute window (admin-set at case assign/create; any duration
-  admin chooses) during which investors can raise a dispute. If disputed
-  within the window, resolution falls to a capital-weighted investor
-  override vote before funds move. No path releases funds without at least
-  jury majority-FOR as the base condition.
+- Escrow: MILESTONE-BASED with investor-approve + timelock fallback.
+  Startup creates milestones. Investor deposits into escrow. Startup
+  requests release → investor has a dispute window (admin-set) to reject.
+  If investor doesn't act within the window, funds auto-release to
+  startup. No jury involvement at any step.
 
-- Jury economics: REAL STAKING + SLASHING. Jurors stake real assets
-  (native XLM SAC + platform SAC token). Minimum stakes are admin-set on
-  chain (first Testnet init intended: 10 XLM + 100 platform units as
-  deploy-time args, not source constants). Jurors are admin-assigned (not
-  random). Slash percentage is admin-configured on chain (not hardcoded).
-  Slashed funds transfer to the on-chain treasury address.
+- AI matchmaking: Off-chain in backend. OpenAI embeddings of startup
+  profiles (industry tags + description + funding stage + location) vs
+  investor preferences (industries + ticket size + stage). Cosine
+  similarity → match score 0-100 displayed in both dashboards.
 
-- Investor override: CAPITAL-WEIGHTED. Vote weight equals each investor's
-  deposited amount. Majority is by weighted capital among votes cast, with
-  a minimum participation threshold (admin-set `min_vote_capital_bps` of
-  total deposited capital).
+- Meetings: Startups buy meeting credits (XLM or platform tokens). One
+  credit = one meeting request to an investor. Investor accepts →
+  Whereby room generated. Investors never pay.
+
+- Credits: Platform treasury collects credit fees. Admin-configurable
+  credit price stored on-chain.
 
 Tech stack (fixed — do not substitute without asking):
 - Contracts: Rust + Soroban SDK, workspace under /contracts
 - Frontend: Next.js (App Router) + TypeScript + Stellar Wallets Kit / Freighter API
-- Backend: Node.js/TypeScript (Fastify) for off-chain indexing, jury
-  workflow orchestration, notifications
+- Backend: Node.js/TypeScript (Express/Fastify) for off-chain indexing, AI
+  matchmaking, meeting orchestration, notifications
 - DB: Postgres (off-chain metadata only — never store funds-relevant state
   off-chain as source of truth; chain is source of truth for escrow/funding)
 - Stellar SDK: @stellar/stellar-sdk (JS), soroban-sdk (Rust)

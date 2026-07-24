@@ -312,17 +312,38 @@ export async function loginWithWallet(
 }
 
 /**
- * Role self-selection is disabled. Jury is the only role and requires
- * admin approval via the application flow. This endpoint always rejects.
+ * Role self-selection for founder / investor.
  */
 export async function selectRole(
-  _userId: string,
-  _role: string,
+  userId: string,
+  role: string,
   _meta?: { ip?: string | null },
 ): Promise<{ user: AuthUser; tokens: TokenPair }> {
-  throw new ForbiddenError(
-    "Role self-selection is disabled. Apply for jury access instead.",
-  );
+  if (!isSelfSelectableRole(role)) {
+    throw new ValidationError(
+      `Invalid role: ${role}. Allowed: ${SELF_SELECTABLE_ROLES.join(", ")}`,
+    );
+  }
+
+  const user = await userRepo.findById(userId);
+  if (!user) {
+    throw new UnauthorizedError(GENERIC_AUTH_FAILURE);
+  }
+  if (user.role) {
+    throw new ForbiddenError("Role already set");
+  }
+
+  const updated = await userRepo.adminSetRole(userId, role);
+  await authEventRepo.record({
+    userId,
+    eventType: "role_selected",
+    success: true,
+    ip: _meta?.ip,
+    detail: `role=${role}`,
+  });
+
+  const tokens = await issueTokens(updated);
+  return { user: toAuthUser(updated), tokens };
 }
 
 export async function completeProfile(
@@ -515,18 +536,6 @@ export async function adminChangeRole(
     ip,
     detail: `${oldRole ?? "none"}→${newRole} target=${targetUserId}`,
   });
-
-  // Escalation: any promotion toward jury/privileged roles
-  const escalations = new Set(["jury"]);
-  if (escalations.has(newRole) && oldRole !== newRole) {
-    await alertRoleEscalation({
-      actorId,
-      targetId: targetUserId,
-      oldRole,
-      newRole,
-      ip,
-    });
-  }
 
   // Force re-login after role change
   await refreshRepo.revokeAllForUser(targetUserId);

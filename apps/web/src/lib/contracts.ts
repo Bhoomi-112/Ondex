@@ -1,15 +1,7 @@
-/**
- * Contract + network config — env only, no hardcoded IDs or RPC URLs.
- * Clients use regenerated bindings from WASM.
- */
-import { Client as JuryClient } from "./bindings/jury/index";
 import { Client as EscrowClient } from "./bindings/escrow/index";
 import { Client as IdentityClient } from "./bindings/identity/index";
 
-export { JuryClient, EscrowClient, IdentityClient };
-
-/** @deprecated alias — use JuryClient */
-export type PlatformClient = JuryClient;
+export { EscrowClient, IdentityClient };
 
 export type PublicNetworkConfig = {
   rpcUrl: string;
@@ -18,7 +10,6 @@ export type PublicNetworkConfig = {
   explorerBaseUrl: string;
   networkName: string;
   escrowContractId: string;
-  juryRegistryContractId: string;
   identityRegistryContractId: string;
   platformTokenContractId?: string;
   xlmTokenContractId?: string;
@@ -42,10 +33,6 @@ export function getNetworkConfig(): PublicNetworkConfig {
     explorerBaseUrl: req("NEXT_PUBLIC_EXPLORER_BASE_URL", process.env.NEXT_PUBLIC_EXPLORER_BASE_URL),
     networkName: req("NEXT_PUBLIC_NETWORK_NAME", process.env.NEXT_PUBLIC_NETWORK_NAME),
     escrowContractId: req("NEXT_PUBLIC_ESCROW_CONTRACT_ID", process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID),
-    juryRegistryContractId: req(
-      "NEXT_PUBLIC_JURY_REGISTRY_CONTRACT_ID",
-      process.env.NEXT_PUBLIC_JURY_REGISTRY_CONTRACT_ID,
-    ),
     identityRegistryContractId: req(
       "NEXT_PUBLIC_IDENTITY_REGISTRY_CONTRACT_ID",
       process.env.NEXT_PUBLIC_IDENTITY_REGISTRY_CONTRACT_ID,
@@ -62,10 +49,6 @@ export function getEscrowContractId(): string {
   return getNetworkConfig().escrowContractId;
 }
 
-export function getJuryRegistryContractId(): string {
-  return getNetworkConfig().juryRegistryContractId;
-}
-
 export function getIdentityRegistryContractId(): string {
   return getNetworkConfig().identityRegistryContractId;
 }
@@ -78,24 +61,6 @@ function clientOpts(publicKey?: string, contractId?: string, defaultId?: string)
     networkPassphrase: cfg.networkPassphrase,
     ...(publicKey ? { publicKey } : {}),
   };
-}
-
-export function getJuryClient(
-  publicKey?: string,
-  contractId?: string,
-): JuryClient {
-  const cfg = getNetworkConfig();
-  return new JuryClient(
-    clientOpts(publicKey, contractId, cfg.juryRegistryContractId),
-  );
-}
-
-/** Back-compat name used by pages — points at jury_registry. */
-export function getPlatformClient(
-  publicKey?: string,
-  contractId?: string,
-): JuryClient {
-  return getJuryClient(publicKey, contractId);
 }
 
 export function getEscrowClient(
@@ -118,11 +83,6 @@ export function getIdentityClient(
   );
 }
 
-/**
- * Prefer same-origin `/api/*` so auth cookies are set on the Next host.
- * Next rewrites `/api/*` → API server (see next.config.mjs).
- * Set NEXT_PUBLIC_API_URL only when the API is on a different origin in prod.
- */
 export function apiUrl(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
   if (typeof window !== "undefined") {
@@ -155,16 +115,6 @@ export function explorerContractUrl(
     "",
   );
   return `${base}/contract/${contractId}`;
-}
-
-export type VoteTag =
-  | { tag: "For"; values: void }
-  | { tag: "Against"; values: void };
-
-export function voteFromApprove(approve: boolean): VoteTag {
-  return approve
-    ? { tag: "For", values: undefined as void }
-    : { tag: "Against", values: undefined as void };
 }
 
 export function xlmToStroops(xlm: number): bigint {

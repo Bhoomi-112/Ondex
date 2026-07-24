@@ -48,7 +48,7 @@ export default function IntroSplash() {
       key={playId}
       onTransitionEnd={handleTransitionEnd}
       onClick={dismiss}
-      className={`fixed inset-0 z-[999] flex items-center justify-center bg-black cursor-pointer transition-transform duration-[900ms] ease-[cubic-bezier(.76,0,.24,1)] ${
+      className={`fixed inset-0 z-[999] flex items-center justify-center bg-black cursor-pointer transition-transform duration-900 ease-out-quart ${
         leaving ? "-translate-y-full" : "translate-y-0"
       }`}
     >

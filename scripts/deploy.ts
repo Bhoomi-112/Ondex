@@ -3,7 +3,6 @@ import fs from "fs";
 import path from "path";
 
 const CONTRACTS = [
-  { label: "jury_registry", wasm: "jury_registry.wasm" },
   { label: "escrow_contract", wasm: "escrow_contract.wasm" },
   { label: "identity_registry", wasm: "identity_registry.wasm" },
 ] as const;
@@ -52,7 +51,6 @@ function checkStellarCli(): void {
 }
 
 function networkFlag(env: Record<string, string>): string {
-  // Prefer named network from env; never hardcode "testnet" as sole option
   if (env.STELLAR_NETWORK) {
     return `--network ${env.STELLAR_NETWORK}`;
   }
@@ -105,7 +103,6 @@ function main(): void {
 
   const contractIds: Record<string, string> = {};
 
-  // Optional: keep existing platform/xlm token ids if present and not redeploying tokens
   if (fs.existsSync(contractsJsonPath)) {
     try {
       const prev = JSON.parse(fs.readFileSync(contractsJsonPath, "utf-8"));
@@ -152,63 +149,19 @@ function main(): void {
 
   if (!skipInit) {
     const admin = requireEnv(env, "ADMIN_ADDRESS");
-    const treasury = env.INIT_TREASURY_ADDRESS || admin;
-    const minXlm = requireEnv(env, "INIT_MIN_XLM_STAKE");
-    const minPlatform = requireEnv(env, "INIT_MIN_PLATFORM_STAKE");
-    const jurySize = requireEnv(env, "INIT_JURY_SIZE");
-    const quorum = requireEnv(env, "INIT_QUORUM");
-    const slashPct = requireEnv(env, "INIT_SLASH_PCT");
-    const minBps = requireEnv(env, "INIT_MIN_VOTE_CAPITAL_BPS");
-
-    if (!contractIds.platform_token || !contractIds.xlm_token) {
-      console.error(
-        "Error: PLATFORM_TOKEN_CONTRACT_ID and XLM_TOKEN_CONTRACT_ID required for init (or deploy SAC first).",
-      );
-      process.exit(1);
-    }
-
-    console.log("Initializing jury_registry...");
-    invoke(secret, net, contractIds.jury_registry, "initialize", [
-      "--admin",
-      admin,
-      "--xlm_token",
-      contractIds.xlm_token,
-      "--platform_token",
-      contractIds.platform_token,
-      "--treasury",
-      treasury,
-      "--min_xlm_stake",
-      minXlm,
-      "--min_platform_stake",
-      minPlatform,
-      "--jury_size",
-      jurySize,
-      "--quorum",
-      quorum,
-      "--slash_pct",
-      slashPct,
-    ]);
 
     console.log("Initializing escrow_contract...");
     invoke(secret, net, contractIds.escrow_contract, "initialize", [
       "--admin",
       admin,
-      "--jury_registry",
-      contractIds.jury_registry,
-      "--min_vote_capital_bps",
-      minBps,
+      "--dispute_window_secs",
+      env.INIT_DISPUTE_WINDOW_SECS || "604800", // 7 days default
     ]);
 
     console.log("Initializing identity_registry...");
     invoke(secret, net, contractIds.identity_registry, "initialize", [
-      "--jury_registry",
-      contractIds.jury_registry,
-    ]);
-
-    console.log("Linking identity_registry on jury_registry...");
-    invoke(secret, net, contractIds.jury_registry, "set_identity_registry", [
-      "--identity_registry",
-      contractIds.identity_registry,
+      "--admin",
+      admin,
     ]);
   }
 

@@ -1,9 +1,8 @@
-export const USER_ROLES = ["founder", "jury", "investor"] as const;
+export const USER_ROLES = ["founder", "investor"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
-/** No role is self-selectable. Jury requires admin approval. Founder requires jury approval. Investor requires admin approval. */
-export const SELF_SELECTABLE_ROLES = [] as const;
-export type SelfSelectableRole = never;
+export const SELF_SELECTABLE_ROLES = ["founder", "investor"] as const;
+export type SelfSelectableRole = (typeof SELF_SELECTABLE_ROLES)[number];
 
 export const ONBOARDING_STATUSES = [
   "role_selected",
@@ -11,13 +10,6 @@ export const ONBOARDING_STATUSES = [
   "active",
 ] as const;
 export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
-
-export const JURY_APPLICATION_STATUSES = [
-  "pending",
-  "approved",
-  "rejected",
-] as const;
-export type JuryApplicationStatus = (typeof JURY_APPLICATION_STATUSES)[number];
 
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && (USER_ROLES as readonly string[]).includes(value);
@@ -43,8 +35,6 @@ export function dashboardPathForRole(role: UserRole): string {
   switch (role) {
     case "founder":
       return "/startup";
-    case "jury":
-      return "/jury";
     case "investor":
       return "/investor";
   }

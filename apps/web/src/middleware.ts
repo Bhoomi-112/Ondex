@@ -8,11 +8,10 @@ import { ROLE_ROUTE_MAP, type UserRole } from "@/lib/auth-types";
 
 const PROTECTED: Array<{ prefix: string; role: UserRole }> = [
   { prefix: "/startup", role: "founder" },
-  { prefix: "/jury", role: "jury" },
   { prefix: "/investor", role: "investor" },
 ];
 
-const AUTH_PAGES = ["/login", "/signup", "/onboarding", "/apply-founder", "/apply-jury", "/apply-investor"];
+const AUTH_PAGES = ["/login", "/signup"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -42,10 +41,6 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL(correct, request.url));
     }
 
-    if (claims.onboardingStatus !== "active") {
-      return NextResponse.redirect(new URL("/onboarding", request.url));
-    }
-
     return NextResponse.next();
   }
 
@@ -66,17 +61,7 @@ export async function middleware(request: NextRequest) {
 
   if (AUTH_PAGES.some((p) => pathname.startsWith(p)) && claims) {
     if (!claims.role) {
-      if (
-        !pathname.startsWith("/apply-founder") &&
-        !pathname.startsWith("/apply-jury") &&
-        !pathname.startsWith("/apply-investor")
-      ) {
-        return NextResponse.redirect(new URL("/login", request.url));
-      }
-    } else if (claims.onboardingStatus !== "active") {
-      if (!pathname.startsWith("/onboarding")) {
-        return NextResponse.redirect(new URL("/onboarding", request.url));
-      }
+      return NextResponse.redirect(new URL("/login", request.url));
     } else if (
       pathname.startsWith("/login") ||
       pathname.startsWith("/signup")
@@ -94,22 +79,12 @@ export const config = {
   matcher: [
     "/startup",
     "/startup/:path*",
-    "/jury",
-    "/jury/:path*",
     "/admin",
     "/admin/:path*",
     "/login",
     "/signup",
     "/signup/:path*",
-    "/onboarding",
-    "/onboarding/:path*",
-    "/apply-founder",
-    "/apply-founder/:path*",
-    "/apply-jury",
-    "/apply-jury/:path*",
     "/investor",
     "/investor/:path*",
-    "/apply-investor",
-    "/apply-investor/:path*",
   ],
 };

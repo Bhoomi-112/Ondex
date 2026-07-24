@@ -9,7 +9,6 @@ import {
   FileText,
   Shield,
   Bell,
-  Scale,
   Briefcase,
   Wallet,
   Vote,
@@ -32,7 +31,7 @@ const juryNav: NavItem[] = [
   { label: "Dashboard", href: "/app/jury", icon: <LayoutDashboard className="h-4 w-4" /> },
   { label: "Assigned Cases", href: "/app/jury/cases", icon: <Briefcase className="h-4 w-4" /> },
   { label: "Voting History", href: "/app/jury/history", icon: <Vote className="h-4 w-4" /> },
-  { label: "Stake", href: "/app/jury/stake", icon: <Scale className="h-4 w-4" /> },
+  { label: "Stake", href: "/app/jury/stake", icon: <Wallet className="h-4 w-4" /> },
 ]
 
 const investorNav: NavItem[] = [
@@ -57,7 +56,7 @@ export function SideNav({ role }: SideNavProps) {
   const items = navMap[role] ?? []
 
   return (
-    <nav className="fixed left-0 top-16 bottom-0 w-64 bg-zinc-950 border-r border-zinc-800 overflow-y-auto no-scrollbar">
+    <nav className="fixed left-0 top-16 bottom-0 w-64 bg-white border-r border-slate-200 overflow-y-auto no-scrollbar">
       <div className="flex flex-col py-6">
         {items.map((item) => {
           const isActive =
@@ -71,8 +70,8 @@ export function SideNav({ role }: SideNavProps) {
               className={cn(
                 "flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors",
                 isActive
-                  ? "text-teal-400 bg-teal-500/10 border-l-2 border-teal-500"
-                  : "text-zinc-400 hover:text-white hover:bg-zinc-800/50 border-l-2 border-transparent"
+                  ? "text-blue-600 bg-blue-50 border-l-2 border-blue-600"
+                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border-l-2 border-transparent"
               )}
             >
               {item.icon}

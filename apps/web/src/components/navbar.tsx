@@ -1,135 +1,84 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useWallet } from "@/providers/wallet";
 import { useAuth } from "@/providers/auth";
-import type { UserRole } from "@/lib/auth-types";
 import { cn, formatAddress } from "@/lib/utils";
-import { fundTestnetAccount } from "@/lib/tx";
-import { useToast } from "@/components/ui/toast";
 import { Logo } from "@/components/logo";
-import { INTRO_REPLAY_EVENT } from "@/components/landing/intro-splash";
-import { LogOut, Menu, X, Droplets, Loader2 } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
+import { ChevronDown, LogOut, Menu, X } from "lucide-react";
 
-const ROLE_NAV: Record<UserRole, Array<{ href: string; label: string }>> = {
-  founder: [
-    { href: "/startup", label: "Dashboard" },
-  ],
-  jury: [
-    { href: "/jury", label: "Dashboard" },
-  ],
-  investor: [
-    { href: "/investor", label: "Dashboard" },
-  ],
-};
-
-const GUEST_LINKS = [
+const NAV_LINKS = [
   { href: "/how-it-works", label: "How It Works" },
-  { href: "/for/startups", label: "Startups" },
-  { href: "/for/jury", label: "Jury" },
-  { href: "/for/investors", label: "Investors" },
+  {
+    label: "For Startups",
+    href: "/for/startups",
+  },
+  {
+    label: "For Investors",
+    href: "/for/investors",
+  },
+  { href: "/startups", label: "Explore" },
 ];
 
 export function Navbar() {
   const { address, walletName } = useWallet();
   const { user, logout } = useAuth();
-  const { addToast } = useToast();
   const pathname = usePathname();
-  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [funding, setFunding] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const isHome = pathname === "/";
-
-  const navLinks = useMemo(() => {
-    if (!user?.role) return GUEST_LINKS;
-    return ROLE_NAV[user?.role] ?? GUEST_LINKS;
-  }, [user?.role]);
-
-  const handleHomeLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    window.dispatchEvent(new Event(INTRO_REPLAY_EVENT));
-    if (pathname === "/") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } else {
-      router.push("/");
-    }
-  };
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
+    const onScroll = () => setScrolled(window.scrollY > 10);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const handleFund = async () => {
-    if (!address) return;
-    setFunding(true);
-    try {
-      const result = await fundTestnetAccount(address);
-      if (result === "already-funded") {
-        addToast({
-          title: "Already funded",
-          description: "Your account is already funded on testnet.",
-          variant: "warning",
-        });
-      } else {
-        addToast({
-          title: "Account funded",
-          description: "Your testnet account has been funded successfully.",
-          variant: "success",
-        });
-        window.location.reload();
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
       }
-    } catch (err: any) {
-      console.error("Friendbot funding failed:", err);
-      addToast({
-        title: "Funding failed",
-        description: err?.message || "Try again in a few seconds.",
-        variant: "error",
-      });
-    } finally {
-      setFunding(false);
-    }
-  };
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const isHome = pathname === "/";
 
   return (
     <header
       className={cn(
-        "fixed top-0 left-0 right-0 z-50 transition-colors duration-300",
-        isHome
-          ? cn(
-              "backdrop-blur-md border-b",
-              scrolled
-                ? "border-white/[0.09] bg-background/85"
-                : "border-transparent bg-background/50"
-            )
-          : "border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+        "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
+        scrolled || !isHome
+          ? "bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm"
+          : "bg-transparent"
       )}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 md:px-12">
-        <div className="flex items-center gap-8">
-          <Link
-            href="/"
-            onClick={handleHomeLogoClick}
-            className="flex items-center gap-2"
-            aria-label="Ondex home"
-          >
-            <Logo priority />
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+        <div className="flex items-center gap-10">
+          <Link href="/" className="flex items-center gap-2" aria-label="Ondex home">
+            <Logo imgClassName="h-7 w-7" />
+            <span className={cn("text-lg font-bold tracking-tight", scrolled || !isHome ? "text-slate-900" : "text-white")}>
+              Ondex
+            </span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => (
+            {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 className={cn(
                   "rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   pathname.startsWith(link.href)
-                    ? "bg-mint/10 text-mint"
-                    : "text-text-secondary hover:text-text-primary hover:bg-white/5"
+                    ? "text-blue-600 bg-blue-50"
+                    : scrolled || !isHome
+                      ? "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                      : "text-white/80 hover:text-white hover:bg-white/10"
                 )}
               >
                 {link.label}
@@ -140,50 +89,71 @@ export function Navbar() {
 
         <div className="flex items-center gap-3">
           {address ? (
-            <>
-              <Link
-                href="/account"
-                className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-border-strong bg-background/50 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-white/5 transition-colors"
-              >
-                Account
-              </Link>
+            <div className="relative" ref={dropdownRef}>
               <button
-                onClick={handleFund}
-                disabled={funding}
-                className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-border-strong bg-background/50 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-white/5 transition-colors"
-                title="Fund testnet account via Friendbot"
-              >
-                {funding ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Droplets className="h-3 w-3" />
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  scrolled || !isHome
+                    ? "text-slate-700 hover:bg-slate-100"
+                    : "text-white/90 hover:bg-white/10"
                 )}
-                {funding ? "Funding..." : "Fund Testnet"}
-              </button>
-              <div className="hidden sm:flex items-center gap-2 rounded-md border border-border-strong bg-background/50 px-3 py-1.5">
-                <div className="h-2 w-2 rounded-full bg-mint" />
-                <span className="text-xs text-text-secondary">{walletName}</span>
-                <span className="text-sm font-mono text-text-primary">
-                  {formatAddress(address)}
-                </span>
-              </div>
-              <button
-                onClick={() => logout()}
-                className="rounded-md p-2 text-text-secondary hover:text-text-primary hover:bg-white/5 transition-colors"
-                title="Log out"
               >
-                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">{walletName || "Wallet"}</span>
+                <span className="font-mono text-xs">{formatAddress(address)}</span>
+                <ChevronDown className="h-3.5 w-3.5" />
               </button>
-            </>
+              {dropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-lg py-1 z-50">
+                  {user?.role && (
+                    <>
+                      <Link
+                        href={user.role === "founder" ? "/startup" : "/investor"}
+                        className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        Dashboard
+                      </Link>
+                      <div className="border-t border-slate-100" />
+                    </>
+                  )}
+                  <Link
+                    href="/account"
+                    className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    onClick={() => setDropdownOpen(false)}
+                  >
+                    Account
+                  </Link>
+                  <button
+                    onClick={() => { logout(); setDropdownOpen(false); }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
-            <Link href="/login" className="btn-cta-primary">
+            <Link
+              href="/login"
+              className={cn(
+                "rounded-lg px-5 py-2 text-sm font-medium transition-all",
+                scrolled || !isHome
+                  ? "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                  : "bg-white text-blue-700 hover:bg-blue-50"
+              )}
+            >
               Log in
             </Link>
           )}
 
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden rounded-md p-2 text-text-secondary hover:text-text-primary"
+            className={cn(
+              "md:hidden rounded-md p-2",
+              scrolled || !isHome ? "text-slate-600" : "text-white"
+            )}
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -191,9 +161,9 @@ export function Navbar() {
       </div>
 
       {mobileOpen && (
-        <div className="md:hidden border-t border-border bg-background/95 backdrop-blur-md">
-          <div className="space-y-1 px-6 py-3">
-            {navLinks.map((link) => (
+        <div className="md:hidden border-t border-slate-200 bg-white">
+          <div className="space-y-1 px-4 py-3">
+            {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -201,33 +171,30 @@ export function Navbar() {
                 className={cn(
                   "block rounded-md px-3 py-2 text-sm font-medium",
                   pathname.startsWith(link.href)
-                    ? "bg-mint/10 text-mint"
-                    : "text-text-secondary hover:text-text-primary"
+                    ? "text-blue-600 bg-blue-50"
+                    : "text-slate-600 hover:text-slate-900"
                 )}
               >
                 {link.label}
               </Link>
             ))}
             {address && (
-              <div className="space-y-2 px-3 py-2 text-sm">
+              <div className="border-t border-slate-100 pt-2 mt-2 space-y-1">
+                {user?.role && (
+                  <Link
+                    href={user.role === "founder" ? "/startup" : "/investor"}
+                    onClick={() => setMobileOpen(false)}
+                    className="block rounded-md px-3 py-2 text-sm font-medium text-slate-600"
+                  >
+                    Dashboard
+                  </Link>
+                )}
                 <button
-                  onClick={handleFund}
-                  disabled={funding}
-                  className="flex items-center gap-1.5 text-text-secondary hover:text-text-primary"
+                  onClick={() => { logout(); setMobileOpen(false); }}
+                  className="block w-full text-left rounded-md px-3 py-2 text-sm font-medium text-red-600"
                 >
-                  {funding ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Droplets className="h-3 w-3" />
-                  )}
-                  {funding ? "Funding..." : "Fund Testnet Account"}
+                  Log out
                 </button>
-                <div className="flex items-center gap-2 text-text-secondary">
-                  <span className="font-mono">{formatAddress(address)}</span>
-                  <button onClick={() => logout()} className="text-danger hover:underline">
-                    Log out
-                  </button>
-                </div>
               </div>
             )}
           </div>

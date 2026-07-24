@@ -4,111 +4,120 @@ extern crate std;
 
 use soroban_sdk::{testutils::Address as _, Address, Bytes, Env};
 
-use crate::{CaseStatus, IdentityRegistry, IdentityRegistryClient};
-
-#[soroban_sdk::contract]
-pub struct MockJury;
-
-#[soroban_sdk::contractimpl]
-impl MockJury {
-    pub fn set_case(env: Env, case_id: u32, status: CaseStatus, approved: bool) {
-        let result = crate::CaseResult {
-            status,
-            for_votes: 2,
-            against_votes: 1,
-            total_votes: 3,
-            resolved_at: env.ledger().timestamp(),
-            approved,
-            dispute_window_secs: 3600,
-        };
-        env.storage().persistent().set(&case_id, &result);
-    }
-
-    pub fn get_case(env: Env, case_id: u32) -> crate::CaseResult {
-        env.storage()
-            .persistent()
-            .get(&case_id)
-            .expect("case not found")
-    }
-}
+use crate::{IdentityRegistry, IdentityRegistryClient};
 
 struct Setup {
     env: Env,
     client: IdentityRegistryClient<'static>,
-    jury: Address,
+    admin: Address,
 }
 
 fn setup() -> Setup {
     let env = Env::default();
     env.mock_all_auths();
 
-    let jury = env.register(MockJury, ());
+    let admin = Address::generate(&env);
     let id = env.register(IdentityRegistry, ());
     let client = IdentityRegistryClient::new(&env, &id);
-    client.initialize(&jury);
+    client.initialize(&admin);
 
-    Setup { env, client, jury }
+    Setup { env, client, admin }
 }
 
-fn set_case(s: &Setup, case_id: u32, status: CaseStatus, approved: bool) {
-    s.env.as_contract(&s.jury, || {
-        MockJury::set_case(s.env.clone(), case_id, status, approved);
-    });
+fn name(env: &Env) -> Bytes {
+    Bytes::from_array(env, b"My Startup")
 }
 
-#[test]
-fn test_commit_and_is_committed() {
-    let s = setup();
-    let identity_id = Bytes::from_array(&s.env, &[1u8; 32]);
-    let hash = Bytes::from_array(&s.env, &[2u8; 32]);
-
-    s.client.commit(&identity_id, &hash);
-    assert!(s.client.is_committed(&identity_id));
-    assert_eq!(s.client.get_commitment(&identity_id), hash);
+fn desc(env: &Env) -> Bytes {
+    Bytes::from_array(env, b"Building the future")
 }
 
-#[test]
-#[should_panic(expected = "identity already committed")]
-fn test_double_commit() {
-    let s = setup();
-    let identity_id = Bytes::from_array(&s.env, &[1u8; 32]);
-    let hash = Bytes::from_array(&s.env, &[2u8; 32]);
-    s.client.commit(&identity_id, &hash);
-    s.client.commit(&identity_id, &hash);
+fn tags(env: &Env) -> Bytes {
+    Bytes::from_array(env, b"defi,blockchain")
+}
+
+fn stage(env: &Env) -> Bytes {
+    Bytes::from_array(env, b"seed")
+}
+
+fn kyc(env: &Env) -> Bytes {
+    Bytes::from_array(env, b"0x1234")
 }
 
 #[test]
-fn test_reveal_after_resolved() {
+fn test_initialize() {
     let s = setup();
-    let identity_id = Bytes::from_array(&s.env, &[9u8; 32]);
-    let hash = Bytes::from_array(&s.env, &[8u8; 32]);
-    let backend = Bytes::from_array(&s.env, &[7u8; 16]);
-
-    s.client.commit(&identity_id, &hash);
-    s.client.link_case(&identity_id, &0);
-    set_case(&s, 0, CaseStatus::Resolved, true);
-
-    s.client.reveal(&identity_id, &0, &backend);
-    assert!(s.client.verify(&identity_id));
+    assert!(s.client.is_startup(&s.admin) == false);
+    assert!(s.client.is_investor(&s.admin) == false);
 }
 
 #[test]
-#[should_panic(expected = "jury vote has not concluded")]
-fn test_reveal_while_voting() {
+fn test_register_startup() {
     let s = setup();
-    let identity_id = Bytes::from_array(&s.env, &[9u8; 32]);
-    let hash = Bytes::from_array(&s.env, &[8u8; 32]);
-    let backend = Bytes::from_array(&s.env, &[7u8; 16]);
+    let wallet = Address::generate(&s.env);
 
-    s.client.commit(&identity_id, &hash);
-    s.client.link_case(&identity_id, &0);
-    set_case(&s, 0, CaseStatus::Voting, false);
+    s.client.register_startup(
+        &wallet,
+        &name(&s.env),
+        &desc(&s.env),
+        &tags(&s.env),
+        &1_000_000,
+        &10,
+    );
 
-    s.client.reveal(&identity_id, &0, &backend);
+    assert!(s.client.is_startup(&wallet));
+    let profile = s.client.get_startup(&wallet);
+    assert_eq!(profile.name, name(&s.env));
+    assert_eq!(profile.funding_ask, 1_000_000);
+    assert_eq!(profile.equity_offered, 10);
 }
 
 #[test]
-fn test_get_jury_registry() {
+fn test_register_investor() {
     let s = setup();
-    assert_eq!(s.client.get_jury_registry(), s.jury);
+    let wallet = Address::generate(&s.env);
+
+    s.client.register_investor(
+        &wallet,
+        &tags(&s.env),
+        &10_000,
+        &100_000,
+        &stage(&s.env),
+        &kyc(&s.env),
+    );
+
+    assert!(s.client.is_investor(&wallet));
+    let profile = s.client.get_investor(&wallet);
+    assert_eq!(profile.preferred_industries, tags(&s.env));
+    assert_eq!(profile.min_ticket, 10_000);
+    assert_eq!(profile.max_ticket, 100_000);
+}
+
+#[test]
+#[should_panic(expected = "startup already registered")]
+fn test_double_startup() {
+    let s = setup();
+    let wallet = Address::generate(&s.env);
+    s.client.register_startup(&wallet, &name(&s.env), &desc(&s.env), &tags(&s.env), &1_000_000, &10);
+    s.client.register_startup(&wallet, &name(&s.env), &desc(&s.env), &tags(&s.env), &2_000_000, &20);
+}
+
+#[test]
+#[should_panic(expected = "funding_ask must be positive")]
+fn test_zero_funding() {
+    let s = setup();
+    let wallet = Address::generate(&s.env);
+    s.client.register_startup(&wallet, &name(&s.env), &desc(&s.env), &tags(&s.env), &0, &10);
+}
+
+#[test]
+fn test_list_startups() {
+    let s = setup();
+    let w1 = Address::generate(&s.env);
+    let w2 = Address::generate(&s.env);
+    s.client.register_startup(&w1, &name(&s.env), &desc(&s.env), &tags(&s.env), &1_000_000, &10);
+    s.client.register_startup(&w2, &name(&s.env), &desc(&s.env), &tags(&s.env), &2_000_000, &20);
+    let list = s.client.list_startups();
+    assert!(list.get(w1.clone()).unwrap_or(false));
+    assert!(list.get(w2.clone()).unwrap_or(false));
 }

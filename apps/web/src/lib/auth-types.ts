@@ -1,4 +1,4 @@
-export type UserRole = "founder" | "jury" | "investor";
+export type UserRole = "founder" | "investor";
 
 export type OnboardingStatus =
   | "role_selected"
@@ -20,8 +20,6 @@ export function dashboardPathForRole(role: UserRole): string {
   switch (role) {
     case "founder":
       return "/startup";
-    case "jury":
-      return "/jury";
     case "investor":
       return "/investor";
   }
@@ -29,6 +27,5 @@ export function dashboardPathForRole(role: UserRole): string {
 
 export const ROLE_ROUTE_MAP: Record<UserRole, string> = {
   founder: "/startup",
-  jury: "/jury",
   investor: "/investor",
 };

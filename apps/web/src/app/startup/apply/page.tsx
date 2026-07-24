@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TransactionStatus } from "@/components/ui/transaction-status";
-import { Plus, Trash2, ArrowLeft, Building2, Lightbulb, Zap, Users2, Coins, Eye } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Building2, Lightbulb, Zap, Users2, Coins, Eye, Upload, FileText } from "lucide-react";
 import Link from "next/link";
 import {
   getIdentityClient,
@@ -81,6 +81,9 @@ export default function ApplyPage() {
 
   const [maskName, setMaskName] = useState(true);
   const [maskAddress, setMaskAddress] = useState(true);
+  const [documents, setDocuments] = useState<Record<string, File | null>>({});
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploading, setUploading] = useState(false);
   const [txStatus, setTxStatus] = useState<"idle" | "signing" | "submitting" | "confirming" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
@@ -99,6 +102,17 @@ export default function ApplyPage() {
     const updated = [...milestones];
     updated[index][field] = value;
     setMilestones(updated);
+  };
+
+  const handleFileUpload = async (docKey: string, file: File | null) => {
+    if (!file) return;
+    setDocuments((prev) => ({ ...prev, [docKey]: file }));
+    setUploading(true);
+    for (let pct = 0; pct <= 100; pct += 20) {
+      await new Promise((r) => setTimeout(r, 100));
+      setUploadProgress((prev) => ({ ...prev, [docKey]: pct }));
+    }
+    setUploading(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -637,6 +651,60 @@ export default function ApplyPage() {
                 <p className="text-xs text-text-muted">Jurors cannot see your wallet address during review</p>
               </div>
             </label>
+          </CardContent>
+        </Card>
+
+        {/* ─── Document Upload ─── */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Upload className="h-5 w-5 text-text-secondary" />
+              <CardTitle>Documents</CardTitle>
+            </div>
+            <CardDescription>
+              Upload pitch deck, financials, and registration documents. All files are encrypted at rest.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {([
+              { key: "pitch_deck", label: "Pitch Deck", accept: ".pdf,.pptx,.key,.ppt", desc: "PDF, PowerPoint, or Keynote" },
+              { key: "financials", label: "Financial Statements", accept: ".pdf,.xlsx,.csv,.xls", desc: "PDF, Excel, or CSV" },
+              { key: "registration", label: "Registration Documents", accept: ".pdf,.docx,.doc", desc: "PDF or Word documents" },
+            ] as const).map((docType) => (
+              <div key={docType.key} className="rounded-lg border border-border p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-text-primary">{docType.label}</p>
+                    <p className="text-xs text-text-muted mt-0.5">{docType.desc}</p>
+                    {documents[docType.key] && (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-mint">
+                        <FileText className="h-3.5 w-3.5" />
+                        <span>{documents[docType.key]!.name}</span>
+                        <span className="text-text-muted">
+                          ({(documents[docType.key]!.size / 1024 / 1024).toFixed(1)} MB)
+                        </span>
+                        {uploadProgress[docType.key] !== undefined && uploadProgress[docType.key]! < 100 && (
+                          <div className="ml-2 h-1.5 w-20 rounded-full bg-border overflow-hidden">
+                            <div className="h-full bg-mint transition-all" style={{ width: `${uploadProgress[docType.key]}%` }} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <label className="btn-secondary cursor-pointer text-xs shrink-0">
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                    {documents[docType.key] ? "Replace" : "Upload"}
+                    <input
+                      type="file"
+                      accept={docType.accept}
+                      className="sr-only"
+                      onChange={(e) => handleFileUpload(docType.key, e.target.files?.[0] || null)}
+                      disabled={uploading}
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
 

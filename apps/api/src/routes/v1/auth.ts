@@ -37,8 +37,6 @@ import {
   totpUri,
 } from "../../lib/mfa.js";
 import * as authService from "../../services/auth.service.js";
-import * as juryAppService from "../../services/jury-application.service.js";
-import * as applicationService from "../../services/application.service.js";
 import * as investorAppService from "../../services/investor-application.service.js";
 import * as userRepo from "../../repositories/user.repository.js";
 import * as authEventRepo from "../../repositories/auth-event.repository.js";
@@ -65,7 +63,6 @@ router.post(
     const { wallet } = req.body;
     try {
       const result = await authService.createChallenge(wallet);
-      // Issue CSRF cookie for subsequent state-changing calls
       if (!req.cookies?.[CSRF_COOKIE]) {
         setCsrfCookie(res, generateCsrfToken());
       }
@@ -119,7 +116,6 @@ router.post(
           geoHint: geo,
           detail: "invalid_challenge",
         });
-        // Generic message — do not reveal wallet existence
         throw new UnauthorizedError(GENERIC);
       }
 
@@ -189,13 +185,6 @@ router.get("/csrf", (_req, res) => {
   res.json({ csrfToken: token });
 });
 
-/** Role self-selection disabled. Jury requires admin-approved application. */
-authedRouter.post("/select-role", requireAuth, (_req, res) => {
-  res.status(403).json({
-    error: "Role self-selection is disabled. Apply for jury access instead.",
-  });
-});
-
 const profileSchema = z.object({
   displayName: z.string().min(2).max(80),
   bio: z.string().max(500).optional(),
@@ -219,158 +208,6 @@ authedRouter.post(
     );
     setAuthCookies(res, tokens);
     res.json({ user });
-  },
-);
-
-authedRouter.get("/jury/status", requireAuth, async (req, res) => {
-  const userId = res.locals.userId as string;
-  const application = await juryAppService.getApplicationStatus(userId);
-  res.json({ application });
-});
-
-const juryApplySchema = z.object({
-  statement: z.string().min(20).max(2000),
-  experience: z.string().max(2000).optional(),
-});
-
-authedRouter.post(
-  "/jury/apply",
-  requireAuth,
-  validate(juryApplySchema, "body"),
-  async (req, res) => {
-    const body = pickAllowed<{ statement: string; experience?: string }>(
-      req.body,
-      ["statement", "experience"],
-    );
-    const application = await juryAppService.applyAsJury(
-      res.locals.userId as string,
-      {
-        statement: sanitizeText(body.statement ?? "", 2000),
-        experience: body.experience
-          ? sanitizeText(body.experience, 2000)
-          : undefined,
-      },
-    );
-    res.status(201).json({ application });
-  },
-);
-
-// ── Founder application (jury-approved) ────────────────────────────
-
-authedRouter.get("/founder/status", requireAuth, async (req, res) => {
-  const userId = res.locals.userId as string;
-  const application = await applicationService.getApplicationStatus(userId);
-  res.json({ application });
-});
-
-const milestoneSchema = z.object({
-  description: z.string().min(1).max(2000),
-  amount: z.union([z.string(), z.number()]),
-});
-
-const founderApplySchema = z.object({
-  name: z.string().min(1).max(200),
-  pitch: z.string().min(20).max(10000),
-  askAmount: z.union([z.string(), z.number()]),
-  experience: z.string().max(2000).optional(),
-  website: z.string().max(500).optional(),
-  socials: z.object({
-    twitter: z.string().max(200).optional(),
-    github: z.string().max(200).optional(),
-    linkedin: z.string().max(200).optional(),
-  }).optional(),
-  milestones: z.array(milestoneSchema).optional(),
-});
-
-authedRouter.post(
-  "/founder/apply",
-  requireAuth,
-  validate(founderApplySchema, "body"),
-  async (req, res) => {
-    const body = pickAllowed<{
-      name: string;
-      pitch: string;
-      askAmount: string | number;
-      experience?: string;
-      website?: string;
-      socials?: Record<string, string>;
-      milestones?: Array<{ description: string; amount: string | number }>;
-    }>(req.body, ["name", "pitch", "askAmount", "experience", "website", "socials", "milestones"]);
-    const application = await applicationService.applyAsFounder(
-      res.locals.userId as string,
-      {
-        name: sanitizeText(body.name ?? "", 200),
-        pitch: sanitizeText(body.pitch ?? "", 10000),
-        askAmount: BigInt(String(body.askAmount ?? 0)),
-        experience: body.experience
-          ? sanitizeText(body.experience, 2000)
-          : undefined,
-        website: body.website,
-        socials: body.socials,
-        milestones: (body.milestones || []).map((m) => ({
-          description: sanitizeText(m.description, 2000),
-          amount: BigInt(String(m.amount ?? 0)),
-        })),
-      },
-    );
-    res.status(201).json({ application });
-  },
-);
-
-// ── Jury: list/approve/reject founder applications ────────────────
-
-authedRouter.get(
-  "/jury/founder-applications",
-  requireAuth,
-  async (req, res) => {
-    const status =
-      typeof req.query.status === "string" ? req.query.status : undefined;
-    const items = await applicationService.listApplications(
-      res.locals.wallet as string,
-      status,
-    );
-    res.json({ items });
-  },
-);
-
-authedRouter.post(
-  "/jury/founder-applications/:id/approve",
-  requireAuth,
-  async (req, res) => {
-    const id = Number(req.params.id);
-    const result = await applicationService.approveApplication(
-      res.locals.wallet as string,
-      id,
-      {
-        actorId: res.locals.userId as string,
-        ip: clientIp(req),
-      },
-    );
-    res.json(result);
-  },
-);
-
-const founderRejectSchema = z.object({
-  reason: z.string().max(500).optional(),
-});
-
-authedRouter.post(
-  "/jury/founder-applications/:id/reject",
-  requireAuth,
-  validate(founderRejectSchema, "body"),
-  async (req, res) => {
-    const id = Number(req.params.id);
-    const body = pickAllowed<{ reason?: string }>(req.body, ["reason"]);
-    const result = await applicationService.rejectApplication(
-      res.locals.wallet as string,
-      id,
-      body.reason ? sanitizeText(body.reason, 500) : undefined,
-      {
-        actorId: res.locals.userId as string,
-        ip: clientIp(req),
-      },
-    );
-    res.json({ application: result });
   },
 );
 
@@ -403,12 +240,6 @@ authedRouter.post(
       aum?: string;
       sourceOfFunds?: string;
       portfolioDesc?: string;
-      experienceLevel?: string;
-      companiesInvested?: string;
-      sectorFocus?: string;
-      investmentRange?: string;
-      previousPortfolio?: string;
-      referralSource?: string;
     }>(req.body, [
       "fullName",
       "entityType",
@@ -416,12 +247,6 @@ authedRouter.post(
       "aum",
       "sourceOfFunds",
       "portfolioDesc",
-      "experienceLevel",
-      "companiesInvested",
-      "sectorFocus",
-      "investmentRange",
-      "previousPortfolio",
-      "referralSource",
     ]);
     const application = await investorAppService.applyAsInvestor(
       res.locals.userId as string,
@@ -439,24 +264,6 @@ authedRouter.post(
           : undefined,
         portfolioDesc: body.portfolioDesc
           ? sanitizeText(body.portfolioDesc, 2000)
-          : undefined,
-        experienceLevel: body.experienceLevel
-          ? sanitizeText(body.experienceLevel, 50)
-          : undefined,
-        companiesInvested: body.companiesInvested
-          ? sanitizeText(body.companiesInvested, 50)
-          : undefined,
-        sectorFocus: body.sectorFocus
-          ? sanitizeText(body.sectorFocus, 500)
-          : undefined,
-        investmentRange: body.investmentRange
-          ? sanitizeText(body.investmentRange, 200)
-          : undefined,
-        previousPortfolio: body.previousPortfolio
-          ? sanitizeText(body.previousPortfolio, 2000)
-          : undefined,
-        referralSource: body.referralSource
-          ? sanitizeText(body.referralSource, 200)
           : undefined,
       },
     );
@@ -577,74 +384,10 @@ authedRouter.post(
   },
 );
 
-// ── Admin jury approval (MFA + audit) ────────────────────────────────
-
-authedRouter.get(
-  "/admin/jury-applications",
-  requireAuth,
-  requireAdmin,
-  requireAdminMfa,
-  async (req, res) => {
-    const status =
-      typeof req.query.status === "string" ? req.query.status : undefined;
-    const items = await juryAppService.listApplications(
-      res.locals.wallet as string,
-      status,
-    );
-    res.json({ items });
-  },
-);
-
-authedRouter.post(
-  "/admin/jury-applications/:id/approve",
-  requireAuth,
-  requireAdmin,
-  requireAdminMfa,
-  async (req, res) => {
-    const id = String(req.params.id);
-    const result = await juryAppService.approveApplication(
-      res.locals.wallet as string,
-      id,
-      {
-        actorId: res.locals.userId as string,
-        ip: clientIp(req),
-      },
-    );
-    res.json(result);
-  },
-);
-
-const rejectSchema = z.object({
-  reason: z.string().max(500).optional(),
-});
-
-authedRouter.post(
-  "/admin/jury-applications/:id/reject",
-  requireAuth,
-  requireAdmin,
-  requireAdminMfa,
-  validate(rejectSchema, "body"),
-  async (req, res) => {
-    const id = String(req.params.id);
-    const body = pickAllowed<{ reason?: string }>(req.body, ["reason"]);
-    const result = await juryAppService.rejectApplication(
-      res.locals.wallet as string,
-      id,
-      body.reason ? sanitizeText(body.reason, 500) : undefined,
-      {
-        actorId: res.locals.userId as string,
-        ip: clientIp(req),
-      },
-    );
-    res.json({ application: result });
-  },
-);
-
 const adminRoleSchema = z.object({
-  role: z.enum(["founder", "jury", "investor"]),
+  role: z.enum(["founder", "investor"]),
 });
 
-/** Dedicated admin-only role assignment endpoint (never from user-facing bodies). */
 authedRouter.post(
   "/admin/users/:userId/role",
   requireAuth,
@@ -653,7 +396,7 @@ authedRouter.post(
   validate(adminRoleSchema, "body"),
   async (req, res) => {
     const targetUserId = String(req.params.userId);
-    const { role } = req.body as { role: "founder" | "jury" | "investor" };
+    const { role } = req.body as { role: "founder" | "investor" };
     const updated = await authService.adminChangeRole(
       res.locals.userId as string,
       res.locals.wallet as string,
@@ -670,8 +413,6 @@ authedRouter.post(
     });
   },
 );
-
-// ── Admin panel endpoints (wallet-gated, no MFA required) ──────────
 
 authedRouter.get(
   "/admin/check",
@@ -708,7 +449,7 @@ authedRouter.get(
 );
 
 const adminRoleAssignSchema = z.object({
-  role: z.enum(["founder", "jury", "investor"]),
+  role: z.enum(["founder", "investor"]),
 });
 
 authedRouter.post(
@@ -718,7 +459,7 @@ authedRouter.post(
   validate(adminRoleAssignSchema, "body"),
   async (req, res) => {
     const targetUserId = String(req.params.userId);
-    const { role } = req.body as { role: "founder" | "jury" | "investor" };
+    const { role } = req.body as { role: "founder" | "investor" };
     const updated = await authService.adminChangeRole(
       res.locals.userId as string,
       res.locals.wallet as string,

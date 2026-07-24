@@ -2,7 +2,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Provider is overridden at runtime by prisma.config.ts
 datasource db {
   provider = "postgresql"
 }
@@ -10,7 +9,7 @@ datasource db {
 model ContractEvent {
   id            String   @id @default(uuid())
   contractId    String   @map("contract_id")
-  contractType  String   @map("contract_type") // escrow | jury | identity
+  contractType  String   @map("contract_type") // escrow | identity
   eventName     String   @map("event_name")
   ledgerSeq     Int      @map("ledger_seq")
   ledgerCloseAt DateTime @map("ledger_close_at")
@@ -33,10 +32,8 @@ model Campaign {
   investorAddress String   @map("investor_address")
   amount          BigInt
   asset           String
-  state           String   @default("Active") // Active | JuryApproved | DisputeOpen | Released | Refunded
+  state           String   @default("Active") // Active | MilestoneRequested | Released | Refunded
   createdAt       DateTime @default(now()) @map("created_at")
-  approvedAt      DateTime? @map("approved_at")
-  disputeDeadline DateTime? @map("dispute_deadline")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@index([state])
@@ -45,76 +42,83 @@ model Campaign {
   @@map("campaigns")
 }
 
-model JuryCase {
-  id            Int      @id @default(autoincrement())
-  caseId        Int      @unique @map("case_id")
-  status        String   @default("Voting") // Voting | Resolved | Disputed | Slashed
-  forVotes      Int      @default(0) @map("for_votes")
-  againstVotes  Int      @default(0) @map("against_votes")
-  totalVotes    Int      @default(0) @map("total_votes")
-  resolvedAt    DateTime? @map("resolved_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  jurors        CaseJuror[]
-  votes         CaseVote[]
-
-  @@index([status])
-  @@map("jury_cases")
-}
-
-model CaseJuror {
-  id        Int      @id @default(autoincrement())
-  caseId    Int      @map("case_id")
-  jurorAddr String   @map("juror_address")
-  assignedAt DateTime @default(now()) @map("assigned_at")
-
-  case      JuryCase @relation(fields: [caseId], references: [caseId])
-
-  @@unique([caseId, jurorAddr])
-  @@index([jurorAddr])
-  @@map("case_jurors")
-}
-
-model CaseVote {
-  id        Int      @id @default(autoincrement())
-  caseId    Int      @map("case_id")
-  jurorAddr String   @map("juror_address")
-  vote      String   // For | Against
-  timestamp DateTime @default(now())
-
-  case      JuryCase @relation(fields: [caseId], references: [caseId])
-
-  @@unique([caseId, jurorAddr])
-  @@map("case_votes")
-}
-
-model Juror {
+model StartupProfile {
   id             Int      @id @default(autoincrement())
-  address        String   @unique
-  xlmStake       BigInt   @map("xlm_stake")
-  platformStake  BigInt   @map("platform_stake")
-  registeredAt   DateTime @default(now()) @map("registered_at")
-  isActive       Boolean  @default(true) @map("is_active")
-
-  @@map("jurors")
-}
-
-model Identity {
-  id             Int      @id @default(autoincrement())
-  identityId     String   @unique @map("identity_id")
-  commitmentHash String?  @map("commitment_hash")
-  isCommitted    Boolean  @default(false) @map("is_committed")
-  isRevealed     Boolean  @default(false) @map("is_revealed")
-  linkedCaseId   Int?     @map("linked_case_id")
-  backendRef     String?  @map("backend_ref")
-  revealedAt     DateTime? @map("revealed_at")
+  wallet         String   @unique
+  name           String
+  description    String
+  industryTags   String   @map("industry_tags")
+  fundingAsk     BigInt   @map("funding_ask")
+  equityOffered  Int      @map("equity_offered")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  @@index([isCommitted])
-  @@index([isRevealed])
-  @@map("identities")
+  @@map("startup_profiles")
+}
+
+model InvestorProfile {
+  id                  Int      @id @default(autoincrement())
+  wallet              String   @unique
+  preferredIndustries String   @map("preferred_industries")
+  minTicket           BigInt   @map("min_ticket")
+  maxTicket           BigInt   @map("max_ticket")
+  preferredStage      String   @map("preferred_stage")
+  kycHash             String?  @map("kyc_hash")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("investor_profiles")
+}
+
+model MatchScore {
+  id           Int      @id @default(autoincrement())
+  startupWallet String  @map("startup_wallet")
+  investorWallet String @map("investor_wallet")
+  score        Float
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([startupWallet, investorWallet])
+  @@index([startupWallet, score])
+  @@index([investorWallet, score])
+  @@map("match_scores")
+}
+
+model Meeting {
+  id             String   @id @default(uuid())
+  startupWallet  String   @map("startup_wallet")
+  investorWallet String   @map("investor_wallet")
+  status         String   @default("pending") // pending | accepted | rejected | completed
+  roomUrl        String?  @map("room_url")
+  scheduledAt    DateTime? @map("scheduled_at")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([startupWallet])
+  @@index([investorWallet])
+  @@index([status])
+  @@map("meetings")
+}
+
+model CreditPurchase {
+  id            String   @id @default(uuid())
+  startupWallet String   @map("startup_wallet")
+  amount        BigInt
+  credits       Int
+  txHash        String?  @map("tx_hash")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([startupWallet])
+  @@map("credit_purchases")
+}
+
+model CreditBalance {
+  id            String   @id @default(uuid())
+  startupWallet String   @unique @map("startup_wallet")
+  balance       Int      @default(0)
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("credit_balances")
 }
 
 /// Opaque session rows kept for migration compatibility; auth uses JWT + refresh_tokens.
@@ -133,7 +137,7 @@ model User {
   id               String   @id @default(uuid())
   wallet           String?  @unique
   email            String?  @unique
-  /// founder | investor | jury — set once; only admin may change
+  /// founder | investor — set once; only admin may change
   role             String?
   /// role_selected | profile_complete | active
   onboardingStatus String   @default("role_selected") @map("onboarding_status")
@@ -146,7 +150,6 @@ model User {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   refreshTokens        RefreshToken[]
-  juryApplications     JuryApplication[]
   applications         Application[]
   investorApplications InvestorApplication[]
   authEvents           AuthEvent[]
@@ -246,31 +249,6 @@ model AuthFailureBucket {
   @@map("auth_failure_buckets")
 }
 
-/// pending_jury_application — not an active role until admin promotes user to jury
-model JuryApplication {
-  id           String    @id @default(uuid())
-  userId       String    @map("user_id")
-  wallet       String
-  /// pending | approved | rejected
-  status       String    @default("pending")
-  statement    String
-  experience   String?
-  reviewedBy   String?   @map("reviewed_by")
-  reviewedAt   DateTime? @map("reviewed_at")
-  rejectReason String?   @map("reject_reason")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([status])
-  @@index([userId])
-  @@index([wallet])
-  @@map("pending_jury_applications")
-}
-
-
-
 /// pending_investor_application — not an active role until admin approves
 model InvestorApplication {
   id                 String    @id @default(uuid())
@@ -307,7 +285,7 @@ model InvestorApplication {
 model Notification {
   id        String   @id @default(uuid())
   wallet    String
-  type      String   // jury_assigned | vote_received | escrow_released | round_closed | dispute_opened
+  type      String   // meeting_request | meeting_accepted | escrow_released | match_found
   title     String
   body      String
   read      Boolean  @default(false)
@@ -334,21 +312,12 @@ model Application {
   name          String
   pitch         String
   askAmount     BigInt   @default(0) @map("ask_amount")
-  experience    String?
-  website       String?
-  socials       String?  // JSON: { twitter?, github?, linkedin? }
   status        String   @default("pending")
-  reviewedBy    String?  @map("reviewed_by")
-  reviewedAt    DateTime? @map("reviewed_at")
-  rejectReason  String?  @map("reject_reason")
-  maskName      Boolean  @default(true) @map("mask_name")
-  maskAddress   Boolean  @default(true) @map("mask_address")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   milestones    ApplicationMilestone[]
-  votes         ApplicationVote[]
 
   @@index([userId])
   @@index([wallet])
@@ -368,19 +337,4 @@ model ApplicationMilestone {
 
   @@unique([applicationId, idx])
   @@map("application_milestones")
-}
-
-model ApplicationVote {
-  id            Int         @id @default(autoincrement())
-  applicationId Int         @map("application_id")
-  voter         String
-  approve       Boolean
-  commentHash   String      @default("") @map("comment_hash")
-  timestamp     DateTime    @default(now())
-
-  application   Application @relation(fields: [applicationId], references: [id])
-
-  @@unique([applicationId, voter])
-  @@index([voter])
-  @@map("application_votes")
 }

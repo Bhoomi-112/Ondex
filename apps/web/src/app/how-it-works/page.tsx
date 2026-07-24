@@ -1,171 +1,152 @@
 import Link from "next/link";
-import {
-  Shield,
-  Users,
-  Coins,
-  Vote,
-  Clock,
-  ArrowRight,
-  CheckCircle2,
-  Lock,
-  Unlock,
-  AlertTriangle,
-} from "lucide-react";
+import { Search, MessageSquare, ShieldCheck, Sparkles, Lock, Users, Clock, CheckCircle, ArrowRight } from "lucide-react";
 
 const STEPS = [
   {
-    icon: Coins,
-    title: "Investors Deposit into Escrow",
+    icon: Search,
+    title: "Founders Register",
     description:
-      "When a campaign passes jury review, investors deposit XLM directly into a Soroban smart contract. Funds are locked — no one can move them except the contract logic. Each campaign gets its own escrow instance tied to its milestone plan.",
+      "Startups create profiles with pitch, industry tags, funding ask, and milestones. Data is stored on-chain via the identity registry. AI embeddings are generated for matchmaking.",
   },
   {
-    icon: Shield,
-    title: "Startup Delivers Milestones",
+    icon: Users,
+    title: "Investors Set Preferences",
     description:
-      "The startup defines milestones with clear deliverables and release amounts. When a milestone is completed, the startup submits a claim. The amount to release is set per milestone and cannot be changed after the campaign is created.",
+      "Investors connect their wallet, set preferred industries, ticket size range, and funding stage. One-time KYC and they're ready to browse. No cost to investors — ever.",
   },
   {
-    icon: Vote,
-    title: "Jury Verifies & Votes",
+    icon: Sparkles,
+    title: "AI Matchmaking",
     description:
-      "Assigned jurors review the milestone claim against the deliverables. Votes are blind — jurors see only a commitment hash, never the startup's identity. Majority FOR triggers release (quorum is admin-configured per case).",
+      "Our engine computes cosine similarity between startup profiles and investor preferences using OpenAI embeddings. A match score (0-100) is displayed in both dashboards.",
   },
   {
     icon: Clock,
-    title: "Dispute Window Opens",
+    title: "Startup Requests Meeting",
     description:
-      "After a jury majority votes FOR, a dispute window opens (duration set by admin per case — not hardcoded). During this window, any investor in the campaign can raise a dispute if they believe the milestone was not properly delivered.",
+      "Founders spend one meeting credit to request a call with an aligned investor. Credits are bought via platform tokens or XLM. Investors accept or decline for free.",
   },
   {
-    icon: AlertTriangle,
-    title: "Dispute Resolution (If Raised)",
+    icon: ShieldCheck,
+    title: "Investor Deposits into Escrow",
     description:
-      "If a dispute is raised within the window, the release is paused. A capital-weighted investor vote determines the outcome — each investor's vote weight equals their deposited amount. Majority of participating capital decides whether funds release or revert.",
+      "When both parties agree to proceed, the investor deposits funds into a Soroban smart contract. Funds are locked — only the contract logic can release or refund.",
   },
   {
-    icon: CheckCircle2,
-    title: "Funds Release or Revert",
+    icon: CheckCircle,
+    title: "Milestone Release",
     description:
-      "No dispute within the window → funds release to the startup automatically. Dispute resolved by investor vote → majority decides. In the rare case of a disputed milestone, jurors who voted FOR face slashing (admin-configured percentage). Partial milestones may be released proportionally.",
+      "Startup completes a milestone and requests release. Investor has a dispute window to reject. If no dispute within the window, funds auto-release to the startup.",
   },
 ];
 
 const KEY_FEATURES = [
   {
-    icon: Lock,
-    title: "Non-custodial escrow",
-    desc: "Funds live in Soroban contracts — Ondex never holds deposits. Only the contract logic can release or refund.",
+    icon: Sparkles,
+    title: "AI-powered matching",
+    desc: "Smart embeddings match founders with the right investors — no blind browsing.",
   },
   {
-    icon: Vote,
-    title: "Blind jury review",
-    desc: "Jurors evaluate against a hash commitment — no identity bias. Votes are on-chain and verifiable.",
+    icon: Lock,
+    title: "Non-custodial escrow",
+    desc: "Funds live in Soroban contracts — Ondex never holds deposits.",
   },
   {
     icon: Users,
-    title: "Investor override",
-    desc: "Capital-weighted vote gives investors the final say when a dispute is raised, overriding the jury if needed.",
+    title: "Startups pay, investors free",
+    desc: "Meeting credits fund the platform. Investors browse, match, and connect for free.",
   },
   {
     icon: Clock,
-    title: "Configurable windows",
-    desc: "Dispute window duration is set per case by the admin — no magic numbers, no hardcoded constants.",
+    title: "Timelock fallback",
+    desc: "If an investor doesn't dispute within the window, funds auto-release to startup.",
   },
 ];
 
 export default function HowItWorksPage() {
   return (
-    <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
-      <div className="mb-12 text-center">
-        <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-amber/20 bg-amber/5 px-3 py-1 text-xs font-medium text-amber">
-          How It Works
+    <>
+      <section className="bg-gradient-to-br from-slate-900 to-blue-900 py-20 sm:py-28">
+        <div className="mx-auto max-w-7xl px-6">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-400/10 px-4 py-1.5 text-sm font-medium text-blue-200 mb-6">
+              How It Works
+            </div>
+            <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
+              AI Matchmaking &amp; On-Chain Escrow
+            </h1>
+            <p className="mt-6 text-lg text-slate-300 max-w-2xl mx-auto">
+              Founders register, investors set preferences, AI matches them together.
+              Meetings are one credit away. Escrow is on-chain and transparent.
+            </p>
+          </div>
         </div>
-        <h1 className="font-serif text-[clamp(28px,5vw,48px)] font-medium leading-[1.08] tracking-tight text-text-primary">
-          Escrow & Milestones
-        </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-[16px] text-text-secondary leading-relaxed">
-          Investors deposit into Soroban contracts. Each milestone releases on
-          jury approval, gated by a dispute window. Every step is on-chain,
-          transparent, and verifiable.
-        </p>
-      </div>
+      </section>
 
-      <div className="relative mb-16">
-        <div className="absolute left-[23px] top-0 bottom-0 w-px bg-border" />
-        <div className="space-y-12">
-          {STEPS.map((step, i) => {
-            const Icon = step.icon;
-            return (
-              <div key={i} className="relative pl-14">
-                <div className="absolute left-0 top-0 flex h-[46px] w-[46px] items-center justify-center rounded-full border border-border bg-card">
-                  <Icon className="h-5 w-5 text-amber" />
-                </div>
-                <div className="pt-1">
-                  <h3 className="text-lg font-semibold text-text-primary">
-                    {i + 1}. {step.title}
-                  </h3>
-                  <p className="mt-2 text-[15px] leading-relaxed text-text-secondary">
-                    {step.description}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+      <section className="py-20 sm:py-28">
+        <div className="mx-auto max-w-3xl px-6">
+          <div className="relative">
+            <div className="absolute left-[23px] top-0 bottom-0 w-px bg-blue-200" />
+            <div className="space-y-16">
+              {STEPS.map((step, i) => {
+                const Icon = step.icon;
+                return (
+                  <div key={i} className="relative pl-16">
+                    <div className="absolute left-0 top-0 flex h-[46px] w-[46px] items-center justify-center rounded-full bg-blue-600 text-white shadow-md">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="pt-1">
+                      <div className="inline-flex items-center rounded-full bg-blue-100 px-3 py-0.5 text-xs font-semibold text-blue-700 mb-2">
+                        Step {i + 1}
+                      </div>
+                      <h3 className="text-xl font-semibold text-slate-900">{step.title}</h3>
+                      <p className="mt-2 text-sm text-slate-500 leading-relaxed">{step.description}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="mb-12 rounded-xl border border-border bg-card/50 p-6 sm:p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <Shield className="h-5 w-5 text-mint" />
-          <h2 className="text-lg font-semibold text-text-primary">
-            Key Design Principles
-          </h2>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2">
-          {KEY_FEATURES.map((f) => {
-            const Icon = f.icon;
-            return (
-              <div key={f.title} className="rounded-lg border border-border bg-background/50 p-4">
-                <div className="mb-2 flex items-center gap-2">
-                  <Icon className="h-4 w-4 text-mint" />
-                  <h3 className="text-sm font-medium text-text-primary">{f.title}</h3>
+      <section className="bg-slate-50 py-20 sm:py-28">
+        <div className="mx-auto max-w-7xl px-6">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="section-eyebrow">Key Features</p>
+            <h2 className="section-heading mt-2">Design Principles</h2>
+          </div>
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {KEY_FEATURES.map((f) => {
+              const Icon = f.icon;
+              return (
+                <div key={f.title} className="rounded-xl border border-slate-200 bg-white p-6">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
+                    <Icon className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <h3 className="mt-4 font-semibold text-slate-900">{f.title}</h3>
+                  <p className="mt-2 text-sm text-slate-500">{f.desc}</p>
                 </div>
-                <p className="text-[13px] leading-relaxed text-text-secondary">{f.desc}</p>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-xl border border-border bg-gradient-to-br from-amber/5 to-transparent p-6 sm:p-8">
-        <h2 className="mb-4 text-lg font-semibold text-text-primary">
-          Ready to participate?
-        </h2>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/for/startups"
-            className="btn-cta-primary inline-flex items-center gap-2 px-6 py-3 text-sm"
-          >
-            Apply as Founder
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-          <Link
-            href="/for/investors"
-            className="btn-cta-secondary inline-flex items-center gap-2 px-6 py-3 text-sm"
-          >
-            Apply as Investor
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-          <Link
-            href="/for/jury"
-            className="btn-cta-secondary inline-flex items-center gap-2 px-6 py-3 text-sm"
-          >
-            Apply as Jury
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+      <section className="py-20">
+        <div className="mx-auto max-w-7xl px-6 text-center">
+          <h2 className="section-heading">Ready to get started?</h2>
+          <p className="mt-4 text-slate-500">Choose your role and join the platform.</p>
+          <div className="mt-8 flex flex-wrap justify-center gap-4">
+            <Link href="/for/startups" className="btn-primary inline-flex items-center gap-2">
+              For Founders <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link href="/for/investors" className="btn-outline inline-flex items-center gap-2">
+              For Investors <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
-      </div>
-    </div>
+      </section>
+    </>
   );
 }

@@ -1,209 +1,206 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { useToast } from "@/components/ui/toast"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
-import { api } from "@/lib/api-client"
-import { truncateAddress, explorerTxUrl } from "@/lib/utils"
-import { useWalletContext } from "@/components/wallet/wallet-provider"
-import { rpcClient, buildContractCall, NETWORK_PASSPHRASE } from "@/lib/stellar"
-import { xdr, TransactionBuilder } from "@stellar/stellar-sdk"
-import Link from "next/link"
-import { Scale, ThumbsUp, ThumbsDown, Briefcase, Vote } from "lucide-react"
+import { useEffect, useState } from "react";
+import { useWallet } from "@/providers/wallet";
+import { useToast } from "@/components/ui/toast";
+import { api } from "@/lib/api-client";
+import { Brain, BarChart3, ExternalLink, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
 
-interface Case {
-  id: string
-  campaign_id: string
-  identity_commitment: string
-  milestone_description: string
-  status: string
-  votes_for: number
-  votes_against: number
-  created_at: string
+interface AIEvaluation {
+  id: string;
+  applicationId: string;
+  score: number;
+  verdict: string;
+  confidence: number;
+  evidenceReport?: {
+    webPresence?: string;
+    documentAnalysis?: string;
+    marketAnalysis?: string;
+  };
+  status: "pending" | "collecting" | "analyzing" | "completed" | "failed";
+  createdAt: string;
+  completedAt?: string;
+  txHash?: string;
 }
 
 export default function JuryDashboard() {
-  const { addToast: toast } = useToast()
-  const { signXdr } = useWalletContext()
-  const [cases, setCases] = React.useState<Case[]>([])
-  const [isLoading, setIsLoading] = React.useState(true)
-  const [votingId, setVotingId] = React.useState<string | null>(null)
+  const { address } = useWallet();
+  const { addToast } = useToast();
+  const [evaluations, setEvaluations] = useState<AIEvaluation[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
+  useEffect(() => {
     api
-      .get<{ data: Case[] }>("/api/v1/cases?status=Voting")
-      .then((res) => setCases(res.data))
-      .catch((err) => {
-        toast({ title: err.message, variant: "error" })
+      .get<{ data: AIEvaluation[]; items?: AIEvaluation[] }>("/api/ai/evaluations")
+      .then((res) => {
+        const items = res.data || res.items || [];
+        setEvaluations(items);
       })
-      .finally(() => setIsLoading(false))
-  }, [toast])
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
-  async function handleVote(caseId: string, voteFor: boolean) {
-    setVotingId(caseId)
-    try {
-      const walletAddress = await import("@/lib/wallet").then((m) => m.getWalletAddress())
-      if (!walletAddress) {
-        toast({ title: "Wallet not connected", variant: "error" })
-        return
-      }
-      const voteArg = xdr.ScVal.scvBool(voteFor)
-
-      const txBuilder = await buildContractCall(
-        process.env.NEXT_PUBLIC_JURY_REGISTRY_CONTRACT_ID!,
-        "vote",
-        [xdr.ScVal.scvString(caseId), voteArg],
-        walletAddress
-      )
-
-      const builtTx = txBuilder.build()
-      const txXdr = builtTx.toXDR()
-      const signedXdr = await signXdr(txXdr)
-
-      const result = await rpcClient.sendTransaction(
-        TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE)
-      )
-
-      toast({ title: `Vote submitted. Tx: ${result.hash}` })
-
-      setCases((prev) =>
-        prev.map((c) =>
-          c.id === caseId
-            ? { ...c, votes_for: c.votes_for + (voteFor ? 1 : 0), votes_against: c.votes_against + (voteFor ? 0 : 1) }
-            : c
-        )
-      )
-    } catch (err: any) {
-      toast({ title: err.message, variant: "error" })
-    } finally {
-      setVotingId(null)
-    }
+  if (!address) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 pt-16">
+        <div className="text-center max-w-md">
+          <Brain className="mx-auto h-12 w-12 text-slate-300" />
+          <h2 className="mt-4 text-xl font-semibold text-slate-900">Connect your wallet</h2>
+          <p className="mt-2 text-sm text-slate-500">Connect your wallet to view AI evaluation results.</p>
+        </div>
+      </div>
+    );
   }
 
-  const totalAssigned = cases.length
-  const totalVotesCast = cases.reduce((sum, c) => sum + c.votes_for + c.votes_against, 0)
+  const statusColor = (status: string) => {
+    switch (status) {
+      case "completed": return "bg-emerald-100 text-emerald-700";
+      case "failed": return "bg-red-100 text-red-700";
+      case "analyzing": return "bg-amber-100 text-amber-700";
+      default: return "bg-slate-100 text-slate-600";
+    }
+  };
+
+  const statusIcon = (status: string) => {
+    switch (status) {
+      case "completed": return <CheckCircle className="h-4 w-4" />;
+      case "failed": return <XCircle className="h-4 w-4" />;
+      case "analyzing":
+      case "collecting": return <Loader2 className="h-4 w-4 animate-spin" />;
+      default: return <Clock className="h-4 w-4" />;
+    }
+  };
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold">Jury Dashboard</h1>
-        <p className="text-zinc-400 text-sm mt-1">Review and vote on startup applications</p>
-      </div>
+    <div className="min-h-screen bg-slate-50 pt-16">
+      <div className="mx-auto max-w-7xl px-6 py-8">
+        <div className="mb-8">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-amber-100 p-3">
+              <Brain className="h-6 w-6 text-amber-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">AI Jury Dashboard</h1>
+              <p className="text-sm text-slate-500 mt-1">
+                AI-powered startup evaluation results. No human jury needed.
+              </p>
+            </div>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-zinc-400">Assigned Cases</p>
-                <p className="text-2xl font-bold mt-1">{totalAssigned}</p>
+        <div className="grid gap-4 sm:grid-cols-4 mb-8">
+          {[
+            { label: "Total Evaluated", value: evaluations.length, color: "text-blue-600 bg-blue-100" },
+            { label: "Approved", value: evaluations.filter((e) => e.verdict === "approved").length, color: "text-emerald-600 bg-emerald-100" },
+            { label: "Rejected", value: evaluations.filter((e) => e.verdict === "rejected").length, color: "text-red-600 bg-red-100" },
+            { label: "Pending", value: evaluations.filter((e) => e.status !== "completed").length, color: "text-amber-600 bg-amber-100" },
+          ].map((stat) => (
+            <div key={stat.label} className="rounded-xl border border-slate-200 bg-white p-6">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-slate-500">{stat.label}</p>
+                <div className={`rounded-lg ${stat.color} p-2`}>
+                  <BarChart3 className="h-4 w-4" />
+                </div>
               </div>
-              <Briefcase className="h-8 w-8 text-zinc-700" />
+              <p className="text-2xl font-bold text-slate-900 mt-2">{stat.value}</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-zinc-400">Votes Cast</p>
-                <p className="text-2xl font-bold mt-1">{totalVotesCast}</p>
-              </div>
-              <Vote className="h-8 w-8 text-zinc-700" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-zinc-400">Active Stake</p>
-                <p className="text-2xl font-bold mt-1">--</p>
-              </div>
-              <Scale className="h-8 w-8 text-zinc-700" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          ))}
+        </div>
 
-      <div>
-        <h2 className="text-lg font-semibold mb-4">Pending Cases</h2>
-        {isLoading ? (
+        {loading ? (
           <div className="space-y-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i}>
-                <CardContent className="p-6">
-                  <Skeleton className="h-6 w-32 mb-2" />
-                  <Skeleton className="h-4 w-full max-w-md mb-2" />
-                  <Skeleton className="h-4 w-48" />
-                </CardContent>
-              </Card>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="animate-pulse rounded-xl border border-slate-200 bg-white p-6">
+                <div className="h-5 w-48 rounded bg-slate-100" />
+                <div className="mt-2 h-4 w-full rounded bg-slate-100" />
+                <div className="mt-4 h-4 w-32 rounded bg-slate-100" />
+              </div>
             ))}
           </div>
-        ) : cases.length === 0 ? (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <Briefcase className="h-12 w-12 text-zinc-700 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No assigned cases</h3>
-              <p className="text-zinc-400 text-sm">
-                There are no pending cases for you to review at this time.
-              </p>
-            </CardContent>
-          </Card>
+        ) : evaluations.length === 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center">
+            <Brain className="mx-auto h-12 w-12 text-slate-300" />
+            <h3 className="mt-4 text-lg font-semibold text-slate-900">No evaluations yet</h3>
+            <p className="mt-2 text-sm text-slate-500">
+              AI evaluations will appear here once startup applications are submitted.
+            </p>
+          </div>
         ) : (
           <div className="space-y-4">
-            {cases.map((c) => (
-              <Card key={c.id} className="hover:border-zinc-700 transition-colors">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <Link href={`/app/cases/${c.id}`} className="font-semibold hover:text-teal-400 transition-colors">
-                          Case {truncateAddress(c.id, 8)}
-                        </Link>
-                        <Badge variant="secondary">{c.status}</Badge>
-                      </div>
-                      <p className="text-sm text-zinc-400 mb-1">
-                        Identity: {truncateAddress(c.identity_commitment, 12)}
-                      </p>
-                      <p className="text-sm text-zinc-500 mb-3">{c.milestone_description}</p>
-                      <div className="flex items-center gap-4 text-xs text-zinc-500">
-                        <span>Votes For: {c.votes_for}</span>
-                        <span>Votes Against: {c.votes_against}</span>
-                      </div>
+            {evaluations.map((evalItem) => (
+              <div key={evalItem.id} className="rounded-xl border border-slate-200 bg-white p-6 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="font-semibold text-slate-900">
+                        Application #{evalItem.applicationId.slice(0, 8)}
+                      </h3>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColor(evalItem.status)}`}>
+                        {statusIcon(evalItem.status)}
+                        {evalItem.status}
+                      </span>
                     </div>
-                    <div className="flex gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1 border-green-600 text-green-400 hover:bg-green-600/10"
-                        onClick={() => handleVote(c.id, true)}
-                        disabled={votingId === c.id}
-                      >
-                        <ThumbsUp className="h-3 w-3" />
-                        {votingId === c.id ? "..." : "For"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1 border-red-600 text-red-400 hover:bg-red-600/10"
-                        onClick={() => handleVote(c.id, false)}
-                        disabled={votingId === c.id}
-                      >
-                        <ThumbsDown className="h-3 w-3" />
-                        {votingId === c.id ? "..." : "Against"}
-                      </Button>
-                    </div>
+
+                    {evalItem.status === "completed" && (
+                      <>
+                        <div className="mt-4 grid grid-cols-3 gap-4 mb-4">
+                          <div className="text-center">
+                            <p className="text-2xl font-bold text-slate-900">{evalItem.score}%</p>
+                            <p className="text-xs text-slate-500">Overall Score</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-2xl font-bold text-slate-900">
+                              {evalItem.confidence}%
+                            </p>
+                            <p className="text-xs text-slate-500">Confidence</p>
+                          </div>
+                          <div className="text-center">
+                            <p className={`text-lg font-bold ${evalItem.verdict === "approved" ? "text-emerald-600" : "text-red-600"}`}>
+                              {evalItem.verdict === "approved" ? "Approved" : "Rejected"}
+                            </p>
+                            <p className="text-xs text-slate-500">Verdict</p>
+                          </div>
+                        </div>
+
+                        {evalItem.evidenceReport && (
+                          <details className="mt-3">
+                            <summary className="text-sm font-medium text-blue-600 cursor-pointer hover:text-blue-700">
+                              View Evidence Report
+                            </summary>
+                            <div className="mt-3 space-y-2 text-sm text-slate-600 bg-slate-50 rounded-lg p-4">
+                              {evalItem.evidenceReport.webPresence && (
+                                <p><span className="font-medium text-slate-900">Web Presence:</span> {evalItem.evidenceReport.webPresence}</p>
+                              )}
+                              {evalItem.evidenceReport.documentAnalysis && (
+                                <p><span className="font-medium text-slate-900">Document Analysis:</span> {evalItem.evidenceReport.documentAnalysis}</p>
+                              )}
+                              {evalItem.evidenceReport.marketAnalysis && (
+                                <p><span className="font-medium text-slate-900">Market Analysis:</span> {evalItem.evidenceReport.marketAnalysis}</p>
+                              )}
+                            </div>
+                          </details>
+                        )}
+
+                        {evalItem.txHash && (
+                          <a
+                            href={`https://stellar.expert/explorer/testnet/tx/${evalItem.txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            View on Stellar Explorer
+                          </a>
+                        )}
+                      </>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             ))}
           </div>
         )}
       </div>
     </div>
-  )
+  );
 }

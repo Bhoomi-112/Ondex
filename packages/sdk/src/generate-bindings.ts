@@ -9,7 +9,6 @@ const ROOT = path.join(__dirname, "../../..");
 
 const CONTRACTS = [
   { name: "escrow-contract", crateName: "escrow_contract" },
-  { name: "jury-registry", crateName: "jury_registry" },
   { name: "identity-registry", crateName: "identity_registry" },
 ];
 
@@ -34,13 +33,9 @@ function writeStub(contractName: string): void {
   );
 }
 
-function copyGenerated(
-  srcIndex: string,
-  destDir: string,
-): void {
+function copyGenerated(srcIndex: string, destDir: string): void {
   fs.mkdirSync(destDir, { recursive: true });
   fs.copyFileSync(srcIndex, path.join(destDir, "index.ts"));
-  // compatibility shims for older import paths
   fs.writeFileSync(
     path.join(destDir, "client.ts"),
     `export { Client } from "./index";\nexport type { Client as ClientType } from "./index";\n`,
@@ -85,13 +80,10 @@ function generateForContract(
     const destDir = path.join(generatedDir, contract.name);
     copyGenerated(srcIndex, destDir);
 
-    // Also publish into web bindings for direct app imports
     const webName =
-      contract.crateName === "jury_registry"
-        ? "jury"
-        : contract.crateName === "escrow_contract"
-          ? "escrow"
-          : "identity";
+      contract.crateName === "escrow_contract"
+        ? "escrow"
+        : "identity";
     copyGenerated(srcIndex, path.join(webBindingsDir, webName));
 
     console.log(`Generated: ${contract.name}`);

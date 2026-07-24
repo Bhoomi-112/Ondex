@@ -4,9 +4,9 @@ import { SplashRoot } from "./splash-root";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
-  title: "Ondex — Startup Funding on Stellar",
+  title: "Ondex — AI-Powered Startup Funding on Stellar",
   description:
-    "Decentralized startup funding marketplace powered by Soroban smart contracts on Stellar. Connects startups, jury, and investors through transparent, milestone-based escrow.",
+    "AI-powered startup funding marketplace on Stellar. Matches founders with aligned investors through smart matchmaking and milestone-based escrow.",
   applicationName: "Ondex",
   icons: {
     icon: [
@@ -20,9 +20,9 @@ export const metadata: Metadata = {
   },
   manifest: "/site.webmanifest",
   openGraph: {
-    title: "Ondex — Startup Funding on Stellar",
+    title: "Ondex — AI-Powered Startup Funding on Stellar",
     description:
-      "Decentralized startup funding marketplace powered by Soroban smart contracts on Stellar.",
+      "AI-powered startup funding marketplace on Stellar.",
     siteName: "Ondex",
     type: "website",
     images: [{ url: "/android-chrome-512x512.png", width: 512, height: 512 }],
@@ -30,14 +30,14 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
     title: "Ondex",
-    description: "Startup funding on Stellar with jury-gated escrow.",
+    description: "AI-powered startup funding on Stellar.",
     images: ["/android-chrome-512x512.png"],
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0f14",
-  colorScheme: "dark",
+  themeColor: "#ffffff",
+  colorScheme: "light",
 };
 
 export default function RootLayout({
@@ -46,7 +46,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+      <html lang="en">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link

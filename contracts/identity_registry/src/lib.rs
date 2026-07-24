@@ -1,41 +1,36 @@
 #![no_std]
-#![allow(deprecated)]
 
-use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Bytes, Env, IntoVal,
-};
-
-#[derive(Clone, PartialEq)]
-#[contracttype]
-pub enum CaseStatus {
-    Voting,
-    Resolved,
-    Disputed,
-    Slashed,
-}
-
-#[derive(Clone)]
-#[contracttype]
-pub struct CaseResult {
-    pub status: CaseStatus,
-    pub for_votes: u32,
-    pub against_votes: u32,
-    pub total_votes: u32,
-    pub resolved_at: u64,
-    pub approved: bool,
-    pub dispute_window_secs: u64,
-}
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Map};
 
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey {
-    Commitment(Bytes),
-    Revealed(Bytes),
-    Committed(Bytes),
-    Nullifier(Bytes),
-    CaseLink(Bytes),
-    JuryRegistry,
+    Admin,
     Initialized,
+    StartupProfile(Address),
+    InvestorProfile(Address),
+    StartupIndex,
+    InvestorIndex,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct StartupProfile {
+    pub name: Bytes,
+    pub description: Bytes,
+    pub industry_tags: Bytes,
+    pub funding_ask: i128,
+    pub equity_offered: u32,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct InvestorProfile {
+    pub preferred_industries: Bytes,
+    pub min_ticket: i128,
+    pub max_ticket: i128,
+    pub preferred_stage: Bytes,
+    pub kyc_hash: Bytes,
 }
 
 #[contract]
@@ -52,9 +47,18 @@ fn require_init(env: &Env) {
     }
 }
 
+fn require_admin(env: &Env) {
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .expect("admin not set");
+    admin.require_auth();
+}
+
 #[contractimpl]
 impl IdentityRegistry {
-    pub fn initialize(env: Env, jury_registry: Address) {
+    pub fn initialize(env: Env, admin: Address) {
         if env
             .storage()
             .instance()
@@ -65,155 +69,167 @@ impl IdentityRegistry {
         }
         env.storage()
             .instance()
-            .set(&DataKey::JuryRegistry, &jury_registry);
+            .set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
             .set(&DataKey::Initialized, &true);
-        env.events()
-            .publish((symbol_short!("INIT"),), (jury_registry,));
-    }
-
-    pub fn commit(env: Env, identity_id: Bytes, commitment_hash: Bytes) {
-        require_init(&env);
-        if env
-            .storage()
-            .persistent()
-            .get::<_, bool>(&DataKey::Committed(identity_id.clone()))
-            .unwrap_or(false)
-        {
-            panic!("identity already committed");
-        }
-
-        env.storage().persistent().set(
-            &DataKey::Commitment(identity_id.clone()),
-            &commitment_hash,
-        );
         env.storage()
             .persistent()
-            .set(&DataKey::Committed(identity_id.clone()), &true);
-
-        env.events()
-            .publish((symbol_short!("COMMIT"),), (identity_id, commitment_hash));
-    }
-
-    pub fn link_case(env: Env, identity_id: Bytes, case_id: u32) {
-        require_init(&env);
-        if !env
-            .storage()
-            .persistent()
-            .get::<_, bool>(&DataKey::Committed(identity_id.clone()))
-            .unwrap_or(false)
-        {
-            panic!("identity not committed");
-        }
-
+            .set(&DataKey::StartupIndex, &Map::<Address, bool>::new(&env));
         env.storage()
             .persistent()
-            .set(&DataKey::CaseLink(identity_id.clone()), &case_id);
-
+            .set(&DataKey::InvestorIndex, &Map::<Address, bool>::new(&env));
         env.events()
-            .publish((symbol_short!("LNK_CASE"),), (identity_id, case_id));
+            .publish((symbol_short!("INIT"),), (admin,));
     }
 
-    pub fn reveal(env: Env, identity_id: Bytes, case_id: u32, backend_ref: Bytes) {
+    pub fn register_startup(
+        env: Env,
+        wallet: Address,
+        name: Bytes,
+        description: Bytes,
+        industry_tags: Bytes,
+        funding_ask: i128,
+        equity_offered: u32,
+    ) {
         require_init(&env);
-        if !env
-            .storage()
-            .persistent()
-            .get::<_, bool>(&DataKey::Committed(identity_id.clone()))
-            .unwrap_or(false)
-        {
-            panic!("identity not committed");
-        }
+        wallet.require_auth();
 
         if env
             .storage()
             .persistent()
-            .get::<_, bool>(&DataKey::Revealed(identity_id.clone()))
-            .unwrap_or(false)
+            .has(&DataKey::StartupProfile(wallet.clone()))
         {
-            panic!("identity already revealed");
+            panic!("startup already registered");
         }
 
-        let stored_case_id: u32 = env
+        if funding_ask <= 0 {
+            panic!("funding_ask must be positive");
+        }
+        if equity_offered == 0 || equity_offered > 100 {
+            panic!("equity_offered must be 1..=100");
+        }
+
+        let profile = StartupProfile {
+            name,
+            description,
+            industry_tags,
+            funding_ask,
+            equity_offered,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::StartupProfile(wallet.clone()), &profile);
+
+        let mut index: Map<Address, bool> = env
             .storage()
             .persistent()
-            .get(&DataKey::CaseLink(identity_id.clone()))
-            .expect("identity not linked to a case");
+            .get(&DataKey::StartupIndex)
+            .unwrap_or(Map::new(&env));
+        index.set(wallet.clone(), true);
+        env.storage()
+            .persistent()
+            .set(&DataKey::StartupIndex, &index);
 
-        if stored_case_id != case_id {
-            panic!("case_id does not match linked case");
-        }
+        env.events()
+            .publish((symbol_short!("REG_STR"),), (wallet,));
+    }
 
-        let jury_registry_addr: Address = env
+    pub fn register_investor(
+        env: Env,
+        wallet: Address,
+        preferred_industries: Bytes,
+        min_ticket: i128,
+        max_ticket: i128,
+        preferred_stage: Bytes,
+        kyc_hash: Bytes,
+    ) {
+        require_init(&env);
+        wallet.require_auth();
+
+        if env
             .storage()
-            .instance()
-            .get(&DataKey::JuryRegistry)
-            .expect("jury registry not set");
-
-        let case_result: CaseResult = env.invoke_contract(
-            &jury_registry_addr,
-            &symbol_short!("get_case"),
-            soroban_sdk::vec![&env, case_id.into_val(&env)],
-        );
-
-        // Terminal states only — vote has concluded (resolved, disputed, or slashed)
-        match case_result.status {
-            CaseStatus::Resolved | CaseStatus::Disputed | CaseStatus::Slashed => {}
-            CaseStatus::Voting => panic!("jury vote has not concluded"),
+            .persistent()
+            .has(&DataKey::InvestorProfile(wallet.clone()))
+        {
+            panic!("investor already registered");
         }
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::Revealed(identity_id.clone()), &true);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Nullifier(identity_id.clone()), &true);
+        if min_ticket <= 0 || max_ticket <= 0 || max_ticket < min_ticket {
+            panic!("invalid ticket range");
+        }
 
-        env.events().publish(
-            (symbol_short!("REVEAL"),),
-            (identity_id, case_id, backend_ref),
-        );
+        let profile = InvestorProfile {
+            preferred_industries,
+            min_ticket,
+            max_ticket,
+            preferred_stage,
+            kyc_hash,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::InvestorProfile(wallet.clone()), &profile);
+
+        let mut index: Map<Address, bool> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvestorIndex)
+            .unwrap_or(Map::new(&env));
+        index.set(wallet.clone(), true);
+        env.storage()
+            .persistent()
+            .set(&DataKey::InvestorIndex, &index);
+
+        env.events()
+            .publish((symbol_short!("REG_INV"),), (wallet,));
     }
 
-    pub fn verify(env: Env, identity_id: Bytes) -> bool {
+    pub fn get_startup(env: Env, wallet: Address) -> StartupProfile {
         require_init(&env);
         env.storage()
             .persistent()
-            .get::<_, bool>(&DataKey::Revealed(identity_id))
-            .unwrap_or(false)
+            .get(&DataKey::StartupProfile(wallet))
+            .expect("startup not found")
     }
 
-    pub fn get_commitment(env: Env, identity_id: Bytes) -> Bytes {
+    pub fn get_investor(env: Env, wallet: Address) -> InvestorProfile {
         require_init(&env);
         env.storage()
             .persistent()
-            .get(&DataKey::Commitment(identity_id))
-            .expect("commitment not found")
+            .get(&DataKey::InvestorProfile(wallet))
+            .expect("investor not found")
     }
 
-    pub fn is_committed(env: Env, identity_id: Bytes) -> bool {
+    pub fn is_startup(env: Env, wallet: Address) -> bool {
         require_init(&env);
         env.storage()
             .persistent()
-            .get::<_, bool>(&DataKey::Committed(identity_id))
-            .unwrap_or(false)
+            .has(&DataKey::StartupProfile(wallet))
     }
 
-    pub fn get_linked_case(env: Env, identity_id: Bytes) -> u32 {
+    pub fn is_investor(env: Env, wallet: Address) -> bool {
         require_init(&env);
         env.storage()
             .persistent()
-            .get(&DataKey::CaseLink(identity_id))
-            .expect("identity not linked to a case")
+            .has(&DataKey::InvestorProfile(wallet))
     }
 
-    pub fn get_jury_registry(env: Env) -> Address {
+    pub fn list_startups(env: Env) -> Map<Address, bool> {
         require_init(&env);
         env.storage()
-            .instance()
-            .get(&DataKey::JuryRegistry)
-            .expect("jury registry not set")
+            .persistent()
+            .get(&DataKey::StartupIndex)
+            .unwrap_or(Map::new(&env))
+    }
+
+    pub fn list_investors(env: Env) -> Map<Address, bool> {
+        require_init(&env);
+        env.storage()
+            .persistent()
+            .get(&DataKey::InvestorIndex)
+            .unwrap_or(Map::new(&env))
     }
 }
 

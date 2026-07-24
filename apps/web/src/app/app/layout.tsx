@@ -11,20 +11,20 @@ export const dynamic = "force-dynamic"
 
 function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { isAuthenticated, isLoading, role } = useAuthContext()
+  const { isAuthenticated, loading, role } = useAuthContext()
 
   React.useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (!loading && !isAuthenticated) {
       router.replace("/login")
     }
-  }, [isAuthenticated, isLoading, router])
+  }, [isAuthenticated, loading, router])
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950">
+      <div className="min-h-screen bg-slate-50">
         <TopNav />
         <div className="flex pt-16">
-          <div className="w-64 border-r border-zinc-800 p-6 space-y-4">
+          <div className="w-64 border-r border-slate-200 p-6 space-y-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
             ))}
@@ -48,7 +48,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen bg-slate-50">
       <TopNav />
       <div className="flex pt-16">
         {role && <SideNav role={role} />}

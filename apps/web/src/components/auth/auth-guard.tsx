@@ -1,17 +1,23 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useAuthContext } from "./auth-provider";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useEffect } from "react";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthContext();
+  const { isAuthenticated, loading } = useAuthContext();
+  const router = useRouter();
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [loading, isAuthenticated, router]);
+
+  if (loading) {
     return (
-      <div className="flex flex-col gap-4 p-8">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
       </div>
     );
   }

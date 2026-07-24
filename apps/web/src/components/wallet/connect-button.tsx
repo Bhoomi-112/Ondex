@@ -11,14 +11,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useWalletContext } from "@/components/wallet/wallet-provider";
-import { useAuthContext } from "@/components/auth/auth-provider";
+import { useWallet } from "@/providers/wallet";
+import { useAuth } from "@/providers/auth";
 import { truncateAddress } from "@/lib/utils";
 
 export function ConnectButton() {
-  const { address, isConnected, isConnecting, connect, disconnect } =
-    useWalletContext();
-  const { isAuthenticated, login, role } = useAuthContext();
+  const { address, walletName, isConnecting, connect, disconnect } = useWallet();
+  const { user, loginWithWallet, logout } = useAuth();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -28,7 +27,7 @@ export function ConnectButton() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!isConnected) {
+  if (!address) {
     return (
       <Button onClick={connect} disabled={isConnecting} variant="outline">
         <Wallet className="h-4 w-4" />
@@ -36,25 +35,6 @@ export function ConnectButton() {
       </Button>
     );
   }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-zinc-400">
-          {truncateAddress(address!)}
-        </span>
-        <Button onClick={() => login(address!)} size="sm">
-          Sign In
-        </Button>
-      </div>
-    );
-  }
-
-  const roleDashboardMap: Record<string, string> = {
-    startup: "/app/startup/dashboard",
-    jury: "/app/jury/dashboard",
-    investor: "/app/investor/dashboard",
-  };
 
   return (
     <DropdownMenu>
@@ -68,7 +48,7 @@ export function ConnectButton() {
             </Avatar>
             <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-green-500" />
           </div>
-          <span className="text-sm text-zinc-300">
+          <span className="text-sm text-slate-700">
             {truncateAddress(address!)}
           </span>
         </Button>
@@ -88,18 +68,18 @@ export function ConnectButton() {
             View on Explorer
           </a>
         </DropdownMenuItem>
-        {role && (
+        {user?.role && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <a href={roleDashboardMap[role] ?? "/app/dashboard"}>
-                {role.charAt(0).toUpperCase() + role.slice(1)} Dashboard
+              <a href={user.role === "founder" ? "/startup" : "/investor"}>
+                Dashboard
               </a>
             </DropdownMenuItem>
           </>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={disconnect} className="text-red-400">
+        <DropdownMenuItem onClick={logout} className="text-red-600">
           <LogOut className="mr-2 h-4 w-4" />
           Disconnect
         </DropdownMenuItem>

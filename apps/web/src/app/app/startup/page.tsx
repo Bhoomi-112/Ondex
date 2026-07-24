@@ -1,243 +1,157 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { useToast } from "@/components/ui/toast"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog"
-import { Skeleton } from "@/components/ui/skeleton"
-import { api } from "@/lib/api-client"
-import { formatAmount, formatDate } from "@/lib/utils"
-import { Plus, FileText, TrendingUp, Target } from "lucide-react"
+import { useState, useEffect } from "react";
+import { useWallet } from "@/providers/wallet";
+import { useAuth } from "@/providers/auth";
+import { api } from "@/lib/api-client";
+import Link from "next/link";
+import { Building2, FileText, Sparkles, Plus, Wallet, CheckCircle, XCircle, Clock } from "lucide-react";
+import { formatAddress } from "@/lib/utils";
 
-interface Campaign {
-  id: string
-  title: string
-  description: string
-  funding_amount: string
-  status: string
-  milestones: { id: string; description: string; completed: boolean }[]
-  created_at: string
+interface Application {
+  id: string;
+  name: string;
+  status: string;
+  createdAt: string;
+  aiScore?: number;
+  aiVerdict?: string;
 }
 
-export default function StartupDashboard() {
-  const { addToast: toast } = useToast()
-  const [campaigns, setCampaigns] = React.useState<Campaign[]>([])
-  const [isLoading, setIsLoading] = React.useState(true)
-  const [dialogOpen, setDialogOpen] = React.useState(false)
-  const [submitting, setSubmitting] = React.useState(false)
-  const [form, setForm] = React.useState({
-    name: "",
-    description: "",
-    fundingAmount: "",
-    milestoneDescription: "",
-  })
+export default function AppStartupDashboard() {
+  const { address } = useWallet();
+  const { user } = useAuth();
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
+  useEffect(() => {
     api
-      .get<{ data: Campaign[] }>("/api/v1/campaigns")
-      .then((res) => setCampaigns(res.data))
-      .catch((err) => {
-        toast({ title: err.message, variant: "error" })
+      .get<{ data: Application[]; items?: Application[] }>("/api/applications")
+      .then((res) => {
+        const items = res.data || res.items || [];
+        setApplications(items);
       })
-      .finally(() => setIsLoading(false))
-  }, [toast])
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
-  async function handleSubmit() {
-    if (!form.name || !form.fundingAmount) return
-    setSubmitting(true)
-    try {
-      const res = await api.post<{ data: Campaign }>("/api/v1/campaigns", {
-        title: form.name,
-        description: form.description,
-        funding_amount: form.fundingAmount,
-        milestone_description: form.milestoneDescription,
-      })
-      setCampaigns((prev) => [res.data, ...prev])
-      setDialogOpen(false)
-      setForm({ name: "", description: "", fundingAmount: "", milestoneDescription: "" })
-      toast({ title: "Application submitted", variant: "success" })
-    } catch (err: any) {
-      toast({ title: err.message, variant: "error" })
-    } finally {
-      setSubmitting(false)
-    }
+  if (!address) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 pt-16">
+        <div className="text-center max-w-md">
+          <Wallet className="mx-auto h-12 w-12 text-slate-300" />
+          <h2 className="mt-4 text-xl font-semibold text-slate-900">Connect your wallet</h2>
+          <p className="mt-2 text-sm text-slate-500">Connect your wallet to view your applications.</p>
+        </div>
+      </div>
+    );
   }
 
-  const activeCount = campaigns.filter((c) => c.status === "PENDING" || c.status === "APPROVED").length
-  const totalFunding = campaigns.reduce((sum, c) => sum + Number(c.funding_amount), 0)
-  const milestonesCompleted = campaigns.reduce(
-    (sum, c) => sum + c.milestones.filter((m) => m.completed).length,
-    0
-  )
+  const statusBadge = (status: string) => {
+    switch (status) {
+      case "approved": return { color: "bg-emerald-100 text-emerald-700", icon: CheckCircle, label: "Approved" };
+      case "rejected": return { color: "bg-red-100 text-red-700", icon: XCircle, label: "Rejected" };
+      case "pending": return { color: "bg-amber-100 text-amber-700", icon: Clock, label: "Pending" };
+      default: return { color: "bg-blue-100 text-blue-700", icon: Clock, label: status };
+    }
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Startup Dashboard</h1>
-          <p className="text-zinc-400 text-sm mt-1">Manage your funding applications</p>
+    <div className="min-h-screen bg-slate-50 pt-16">
+      <div className="mx-auto max-w-7xl px-6 py-8">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Startup Dashboard</h1>
+            <p className="text-sm text-slate-500 mt-1">Manage your applications and AI evaluations.</p>
+          </div>
+          <Link href="/startup/apply" className="btn-primary inline-flex items-center gap-2">
+            <Plus className="h-4 w-4" /> New Application
+          </Link>
         </div>
-        <Button onClick={() => setDialogOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Apply for Funding
-        </Button>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-zinc-400">Active Applications</p>
-                <p className="text-2xl font-bold mt-1">{activeCount}</p>
+        <div className="grid gap-4 sm:grid-cols-3 mb-8">
+          {[
+            { label: "Total Applications", value: applications.length, icon: FileText, color: "bg-blue-100 text-blue-600" },
+            { label: "AI Evaluated", value: applications.filter((a) => a.aiScore !== undefined).length, icon: Sparkles, color: "bg-emerald-100 text-emerald-600" },
+            { label: "Approved", value: applications.filter((a) => a.aiVerdict === "approved").length, icon: CheckCircle, color: "bg-green-100 text-green-600" },
+          ].map((stat) => {
+            const Icon = stat.icon;
+            return (
+              <div key={stat.label} className="rounded-xl border border-slate-200 bg-white p-6">
+                <div className="flex items-center gap-4">
+                  <div className={`rounded-lg ${stat.color} p-3`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">{stat.label}</p>
+                    <p className="text-xl font-bold text-slate-900">{stat.value}</p>
+                  </div>
+                </div>
               </div>
-              <FileText className="h-8 w-8 text-zinc-700" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-zinc-400">Total Funding</p>
-                <p className="text-2xl font-bold mt-1">{formatAmount(totalFunding)} XLM</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-zinc-700" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-zinc-400">Milestones Completed</p>
-                <p className="text-2xl font-bold mt-1">{milestonesCompleted}</p>
-              </div>
-              <Target className="h-8 w-8 text-zinc-700" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            );
+          })}
+        </div>
 
-      <div>
-        <h2 className="text-lg font-semibold mb-4">Applications</h2>
-        {isLoading ? (
+        {loading ? (
           <div className="space-y-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i}>
-                <CardContent className="p-6">
-                  <Skeleton className="h-6 w-48 mb-2" />
-                  <Skeleton className="h-4 w-full max-w-md mb-2" />
-                  <Skeleton className="h-4 w-32" />
-                </CardContent>
-              </Card>
+            {[1, 2].map((i) => (
+              <div key={i} className="animate-pulse rounded-xl border border-slate-200 bg-white p-6">
+                <div className="h-5 w-48 rounded bg-slate-100" />
+                <div className="mt-2 h-4 w-full rounded bg-slate-100" />
+              </div>
             ))}
           </div>
-        ) : campaigns.length === 0 ? (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <FileText className="h-12 w-12 text-zinc-700 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No applications yet</h3>
-              <p className="text-zinc-400 text-sm mb-4">
-                Create your first funding application to get started.
-              </p>
-              <Button onClick={() => setDialogOpen(true)} className="gap-2">
-                <Plus className="h-4 w-4" />
-                Create Application
-              </Button>
-            </CardContent>
-          </Card>
+        ) : applications.length === 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center">
+            <Building2 className="mx-auto h-12 w-12 text-slate-300" />
+            <h3 className="mt-4 text-lg font-semibold text-slate-900">No applications yet</h3>
+            <p className="mt-2 text-sm text-slate-500 mb-6">Create your first funding application.</p>
+            <Link href="/startup/apply" className="btn-primary inline-flex">
+              <Plus className="mr-2 h-4 w-4" /> Create Application
+            </Link>
+          </div>
         ) : (
           <div className="space-y-4">
-            {campaigns.map((campaign) => (
-              <Card key={campaign.id} className="hover:border-zinc-700 transition-colors">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
+            {applications.map((app) => {
+              const badge = statusBadge(app.status);
+              const Icon = badge.icon;
+              return (
+                <div key={app.id} className="rounded-xl border border-slate-200 bg-white p-6 hover:shadow-md transition-shadow">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <h3 className="font-semibold">{campaign.title}</h3>
-                        <Badge variant={campaign.status === "APPROVED" ? "default" : "secondary"}>
-                          {campaign.status}
-                        </Badge>
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-semibold text-slate-900">{app.name}</h3>
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.color}`}>
+                          <Icon className="h-3 w-3" />
+                          {badge.label}
+                        </span>
                       </div>
-                      <p className="text-sm text-zinc-400 mb-3 line-clamp-2">{campaign.description}</p>
-                      <div className="flex items-center gap-4 text-xs text-zinc-500">
-                        <span>Funding: {formatAmount(campaign.funding_amount)} XLM</span>
-                        <span>Created: {formatDate(campaign.created_at)}</span>
-                        <span>Milestones: {campaign.milestones.length}</span>
-                      </div>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Created {new Date(app.createdAt).toLocaleDateString()}
+                      </p>
+                      {app.aiScore !== undefined && (
+                        <div className="mt-3 flex items-center gap-4">
+                          <div>
+                            <span className="text-xs text-slate-400">AI Score</span>
+                            <p className="text-sm font-semibold text-slate-900">{app.aiScore}%</p>
+                          </div>
+                          {app.aiVerdict && (
+                            <div>
+                              <span className="text-xs text-slate-400">Verdict</span>
+                              <p className={`text-sm font-semibold ${app.aiVerdict === "approved" ? "text-emerald-600" : "text-red-600"}`}>
+                                {app.aiVerdict}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogClose onClick={() => setDialogOpen(false)} />
-          <DialogHeader>
-            <DialogTitle>Apply for Funding</DialogTitle>
-            <DialogDescription>Submit a new funding application for jury review.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-zinc-300 mb-1 block">Project Name</label>
-              <Input
-                placeholder="Your project name"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-zinc-300 mb-1 block">Description</label>
-              <Input
-                placeholder="Brief description of your project"
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-zinc-300 mb-1 block">Funding Amount (XLM)</label>
-              <Input
-                type="number"
-                placeholder="10000"
-                value={form.fundingAmount}
-                onChange={(e) => setForm((f) => ({ ...f, fundingAmount: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-zinc-300 mb-1 block">Milestone Description</label>
-              <Input
-                placeholder="First milestone deliverable"
-                value={form.milestoneDescription}
-                onChange={(e) => setForm((f) => ({ ...f, milestoneDescription: e.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit} disabled={submitting || !form.name || !form.fundingAmount}>
-              {submitting ? "Submitting..." : "Submit Application"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
-  )
+  );
 }

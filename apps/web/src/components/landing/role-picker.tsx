@@ -116,7 +116,7 @@ export function RolePicker({ heroRevealed, isAuthenticated }: RolePickerProps) {
                 key={role.key}
                 href={role.href}
                 className={cn(
-                  "group relative flex flex-col h-full rounded-2xl p-8 transition-all duration-300 ease-[cubic-bezier(.22,.9,.3,1)]",
+                  "group relative flex flex-col h-full rounded-2xl p-8 transition-all duration-300 ease-out-expo",
                   "bg-background border",
                   colors.border,
                   colors.hoverBorder,
