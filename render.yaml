@@ -5,7 +5,7 @@ services:
     repo: https://github.com/Bhoomi-112/Ondex
     branch: main
     buildCommand: pnpm --filter @ondex/api build
-    startCommand: pnpm --filter @ondex/api exec prisma db push && exec node apps/api/dist/index.js
+    startCommand: npx prisma db push && exec node dist/index.js
     healthCheckPath: /api/v1/auth/csrf
     envVars:
       - key: NODE_ENV
