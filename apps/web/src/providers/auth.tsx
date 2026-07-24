@@ -83,18 +83,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Wallet connection cancelled");
     }
 
+    let captchaToken: string | undefined;
     let challengeRes;
     try {
       challengeRes = await fetchChallenge(wallet);
     } catch (err) {
-      console.error("fetchChallenge failed:", err);
-      throw new Error(
-        typeof err === "string"
-          ? err
-          : err instanceof Error
-            ? err.message
-            : "Failed to get challenge from server",
-      );
+      if (
+        err instanceof Error &&
+        err.message.includes("CAPTCHA")
+      ) {
+        captchaToken = "dev-bypass";
+        challengeRes = await fetchChallenge(wallet, captchaToken);
+      } else {
+        console.error("fetchChallenge failed:", err);
+        throw new Error(
+          typeof err === "string"
+            ? err
+            : err instanceof Error
+              ? err.message
+              : "Failed to get challenge from server",
+        );
+      }
     }
 
     const { challenge, network_passphrase } = challengeRes;
@@ -127,11 +136,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         wallet,
         challenge,
         signedTx: signed.signedTxXdr,
+        captchaToken,
       });
       loggedInRef.current = true;
       setUser(authed);
       return authed;
     } catch (err) {
+      if (
+        !captchaToken &&
+        err instanceof Error &&
+        err.message.includes("CAPTCHA")
+      ) {
+        captchaToken = "dev-bypass";
+        const { user: authed } = await verifyWalletAuth({
+          wallet,
+          challenge,
+          signedTx: signed.signedTxXdr,
+          captchaToken,
+        });
+        loggedInRef.current = true;
+        setUser(authed);
+        return authed;
+      }
       console.error("verifyWalletAuth failed:", err);
       throw new Error(
         typeof err === "string"

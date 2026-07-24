@@ -67,14 +67,16 @@ async function authFetch<T>(
   return body as T;
 }
 
-export async function fetchChallenge(wallet: string) {
+export async function fetchChallenge(wallet: string, captchaToken?: string) {
+  const body: Record<string, string> = { wallet };
+  if (captchaToken) body.captchaToken = captchaToken;
   return authFetch<{
     challenge: string;
     network_passphrase: string;
     expiresAt?: string;
   }>("/api/v1/auth/challenge", {
     method: "POST",
-    body: JSON.stringify({ wallet }),
+    body: JSON.stringify(body),
   });
 }
 

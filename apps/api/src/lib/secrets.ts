@@ -25,9 +25,13 @@ export type SecretName =
 
 function readFileIfPath(value: string | undefined): string | undefined {
   if (!value) return undefined;
-  if (value.startsWith("-----BEGIN") || value.includes("\n")) {
+
+  // Inline PEM content (with actual or escaped newlines)
+  if (value.startsWith("-----BEGIN")) {
     return value.replace(/\\n/g, "\n");
   }
+
+  // Explicit file: prefix — resolve relative to CWD
   if (value.startsWith("file:")) {
     const filePath = value.slice(5);
     const resolved = path.isAbsolute(filePath)
@@ -38,6 +42,15 @@ function readFileIfPath(value: string | undefined): string | undefined {
     }
     return fs.readFileSync(resolved, "utf-8");
   }
+
+  // Bare path to an existing file on disk (no file: prefix).
+  // This covers platform-specific injection paths (e.g. Render, Docker secrets)
+  // where users set JWT_PRIVATE_KEY=/etc/secrets/jwt_priv.pem.
+  if (fs.existsSync(value)) {
+    return fs.readFileSync(value, "utf-8");
+  }
+
+  // Inline value (API key, DB URL, etc.)
   return value;
 }
 

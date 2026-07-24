@@ -1,6 +1,9 @@
 import { createHash, createPublicKey, randomBytes } from "node:crypto";
 import * as jose from "jose";
 import { getSecret, requireSecret } from "./secrets.js";
+
+const PKCS8_HEADER = "-----BEGIN PRIVATE KEY-----";
+const PKCS1_HEADER = "-----BEGIN RSA PRIVATE KEY-----";
 import type { UserRole, OnboardingStatus } from "./roles.js";
 
 /** Allowed JWT algorithms — never trust the token's own `alg` header alone. */
@@ -31,6 +34,21 @@ function kidFromPem(pem: string): string {
 }
 
 async function importPrivate(pem: string) {
+  if (pem.startsWith(PKCS1_HEADER)) {
+    throw new Error(
+      "JWT_PRIVATE_KEY is PKCS#1 format (-----BEGIN RSA PRIVATE KEY-----). " +
+        "Convert to PKCS#8 (-----BEGIN PRIVATE KEY-----) with: " +
+        "openssl pkcs8 -topk8 -inform PEM -outform PEM -in rsa_key.pem -out pkcs8_key.pem -nocrypt",
+    );
+  }
+  if (!pem.startsWith(PKCS8_HEADER)) {
+    throw new Error(
+      "JWT_PRIVATE_KEY does not appear to be a valid PEM private key. " +
+        "Expected -----BEGIN PRIVATE KEY----- header. " +
+        "If using a file path, ensure it starts with file: " +
+        "or points to an existing file (e.g. JWT_PRIVATE_KEY=file:./path/to/key.pem).",
+    );
+  }
   return jose.importPKCS8(pem, "RS256");
 }
 
@@ -161,9 +179,21 @@ export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-/** Validate PEM public key is parseable (boot check). */
+/** Validate both PEM keys are parseable (boot check). */
 export function assertJwtKeysConfigured(): void {
-  requireSecret("JWT_PRIVATE_KEY");
+  const priv = requireSecret("JWT_PRIVATE_KEY");
   const pub = requireSecret("JWT_PUBLIC_KEY");
+  if (!priv.startsWith(PKCS8_HEADER)) {
+    if (priv.startsWith(PKCS1_HEADER)) {
+      throw new Error(
+        "JWT_PRIVATE_KEY is PKCS#1 format. Convert to PKCS#8: " +
+          "openssl pkcs8 -topk8 -inform PEM -outform PEM -in rsa_key.pem -out pkcs8_key.pem -nocrypt",
+      );
+    }
+    throw new Error(
+      "JWT_PRIVATE_KEY does not start with -----BEGIN PRIVATE KEY-----. " +
+        "Ensure it contains a valid PKCS#8 private key PEM string.",
+    );
+  }
   createPublicKey(pub);
 }
