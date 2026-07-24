@@ -1,0 +1,34 @@
+name: Contracts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contracts/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "contracts/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.79.0
+          targets: wasm32v1-none
+
+      - name: Run tests
+        run: cargo test
+        working-directory: contracts
+
+      - name: Build WASM release
+        run: cargo build --target wasm32v1-none --release
+        working-directory: contracts
+
+      - name: Show WASM sizes
+        run: ls -lh target/wasm32v1-none/release/*.wasm
+        working-directory: contracts
