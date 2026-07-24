@@ -1,11 +1,13 @@
 import { config } from "dotenv";
 import { resolve } from "path";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 config({ path: resolve(import.meta.dirname, "../..", ".env") });
 config({ path: resolve(import.meta.dirname, ".env"), override: true });
 
-const url = env("DATABASE_URL");
+// During build, DATABASE_URL may not be set (Render injects it at runtime).
+// Fall back to a local SQLite URL so prisma generate can produce the client.
+const url = process.env.DATABASE_URL ?? "file:./prisma/dev.db";
 const provider = url.startsWith("postgresql://") || url.startsWith("postgres://")
   ? "postgresql"
   : "sqlite";
