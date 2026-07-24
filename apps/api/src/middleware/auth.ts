@@ -8,10 +8,13 @@ import * as userRepo from "../repositories/user.repository.js";
 import * as authEventRepo from "../repositories/auth-event.repository.js";
 import { decryptMfaSecret, verifyTotp } from "../lib/mfa.js";
 import { checkRoleCheckBurst } from "../services/anomaly.service.js";
+import { verifyAccessToken } from "../lib/jwt.js";
+import { ACCESS_COOKIE } from "../lib/cookies.js";
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
-    const sessionId =
+    const token =
+      req.cookies?.[ACCESS_COOKIE] ??
       req.cookies?.session ??
       (() => {
         const header = req.headers.authorization;
@@ -19,12 +22,19 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
         return undefined;
       })();
 
-    if (!sessionId) {
+    if (!token) {
       throw new UnauthorizedError("Missing session");
     }
 
-    const wallet = await authService.validateSession(sessionId);
-    res.locals.wallet = wallet;
+    const claims = await verifyAccessToken(token);
+    if (!claims) {
+      throw new UnauthorizedError("Invalid or expired session");
+    }
+
+    res.locals.wallet = claims.wallet;
+    res.locals.userId = claims.sub;
+    res.locals.role = claims.role;
+    res.locals.onboardingStatus = claims.onboardingStatus;
     next();
   } catch (err) {
     next(err);
@@ -33,7 +43,8 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 
 export const optionalAuth: RequestHandler = async (req, res, next) => {
   try {
-    const sessionId =
+    const token =
+      req.cookies?.[ACCESS_COOKIE] ??
       req.cookies?.session ??
       (() => {
         const header = req.headers.authorization;
@@ -41,9 +52,14 @@ export const optionalAuth: RequestHandler = async (req, res, next) => {
         return undefined;
       })();
 
-    if (sessionId) {
-      const wallet = await authService.validateSession(sessionId);
-      res.locals.wallet = wallet;
+    if (token) {
+      const claims = await verifyAccessToken(token);
+      if (claims) {
+        res.locals.wallet = claims.wallet;
+        res.locals.userId = claims.sub;
+        res.locals.role = claims.role;
+        res.locals.onboardingStatus = claims.onboardingStatus;
+      }
     }
 
     next();
