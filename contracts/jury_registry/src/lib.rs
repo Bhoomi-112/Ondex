@@ -1,8 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Env, Vec};
 
 #[derive(Clone, PartialEq)]
 #[contracttype]
@@ -42,6 +40,8 @@ pub struct CaseResult {
     pub for_votes: u32,
     pub against_votes: u32,
     pub total_votes: u32,
+    pub approved: bool,
+    pub dispute_window_secs: u64,
     pub resolved_at: u64,
 }
 
@@ -52,31 +52,24 @@ pub enum DataKey {
     CaseJurors(u32),
     CaseVote(u32, Address),
     CaseResult(u32),
-    DisputeWindow,
     NumCases,
     Registered(Address),
     IdentityRegistry,
+    Admin,
+    XlmToken,
+    PlatformToken,
+    Treasury,
+    MinXlmStake,
+    MinPlatformStake,
+    JurySize,
+    Quorum,
+    SlashPct,
+    Initialized,
+    ReentrancyLock,
 }
 
 #[contract]
 pub struct JuryRegistry;
-
-<<<<<<< Updated upstream
-#[contractimpl]
-impl JuryRegistry {
-    pub fn initialize(env: Env, admin: Address, dispute_window_secs: u64) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::DisputeWindow, &dispute_window_secs);
-        env.storage()
-            .persistent()
-            .set(&DataKey::NumCases, &0u32);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Registered(admin.clone()), &true);
-=======
-// TODO(security-audit): External third-party security audit required before
-// mainnet deployment / handling real funds. See docs/THREAT_MODEL.md.
 
 fn require_init(env: &Env) {
     if !env
@@ -256,8 +249,6 @@ impl JuryRegistry {
             panic!("slash_pct must be 0..=100");
         }
 
-        // Admin is stored as config; deployer signs the init tx (admin key not required at deploy).
-
         let instance = env.storage().instance();
         instance.set(&DataKey::Admin, &admin);
         instance.set(&DataKey::XlmToken, &xlm_token);
@@ -271,21 +262,11 @@ impl JuryRegistry {
         instance.set(&DataKey::Initialized, &true);
         env.storage().persistent().set(&DataKey::NumCases, &0u32);
 
->>>>>>> Stashed changes
-        env.events().publish(
-            (symbol_short!("INIT"),),
-            (admin, dispute_window_secs),
-        );
+        env.events().publish((symbol_short!("INIT"),), (admin,));
     }
 
     pub fn set_identity_registry(env: Env, identity_registry: Address) {
-<<<<<<< Updated upstream
-        env.storage().persistent().set(
-            &DataKey::IdentityRegistry,
-            &identity_registry,
-=======
         require_init(&env);
-        // First link may be done by deployer; later changes require admin.
         let already = env.storage().instance().has(&DataKey::IdentityRegistry);
         if already {
             require_admin(&env);
@@ -312,44 +293,45 @@ impl JuryRegistry {
         env.events().publish(
             (symbol_short!("SET_MIN"),),
             (min_xlm_stake, min_platform_stake),
->>>>>>> Stashed changes
         );
+    }
+
+    pub fn set_slash_pct(env: Env, slash_pct: u32) {
+        require_init(&env);
+        require_admin(&env);
+        if slash_pct > 100 {
+            panic!("slash_pct must be 0..=100");
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::SlashPct, &slash_pct);
+        env.events()
+            .publish((symbol_short!("SET_SL"),), (slash_pct,));
     }
 
     pub fn register(env: Env, juror: Address, xlm_stake: i128, platform_stake: i128) {
         juror.require_auth();
-
-        if env
-            .storage()
-            .persistent()
-            .get::<_, bool>(&DataKey::Registered(juror.clone()))
-            .unwrap_or(false)
-        {
-            panic!("already registered");
-        }
-
-        env.storage().persistent().set(
-            &DataKey::JurorStakes(juror.clone()),
-            &JurorStakes {
-                xlm: xlm_stake,
-                platform: platform_stake,
-                registered_at: env.ledger().timestamp(),
-            },
-        );
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::Registered(juror.clone()), &true);
-
-        env.events().publish(
-            (symbol_short!("REG"),),
-            (juror, xlm_stake, platform_stake),
-        );
+        self_register(&env, juror, xlm_stake, platform_stake);
     }
 
-    pub fn assign(env: Env, case_id: u32, jurors: Vec<Address>) {
-        if jurors.len() != 5 {
-            panic!("must assign exactly 5 jurors");
+    pub fn sponsored_register(
+        env: Env,
+        sponsor: Address,
+        juror: Address,
+        xlm_stake: i128,
+        platform_stake: i128,
+    ) {
+        sponsor.require_auth();
+        sponsored_register(&env, &sponsor, juror, xlm_stake, platform_stake);
+    }
+
+    pub fn assign(env: Env, case_id: u32, jurors: Vec<Address>, dispute_window_secs: u64) {
+        require_init(&env);
+        require_admin(&env);
+
+        let jury_size = get_u32(&env, DataKey::JurySize);
+        if jurors.len() != jury_size {
+            panic!("juror count must equal jury_size");
         }
 
         let num_cases: u32 = env
@@ -380,6 +362,8 @@ impl JuryRegistry {
                 for_votes: 0,
                 against_votes: 0,
                 total_votes: 0,
+                approved: false,
+                dispute_window_secs,
                 resolved_at: 0,
             },
         );
@@ -448,14 +432,10 @@ impl JuryRegistry {
             Vote::Against => updated.against_votes += 1,
         }
 
-        let quorum = 3u32;
+        let quorum = get_u32(&env, DataKey::Quorum);
         if updated.total_votes >= quorum {
-            let majority = (updated.total_votes / 2) + 1;
-            updated.status = if updated.for_votes >= majority {
-                CaseStatus::Resolved
-            } else {
-                CaseStatus::Resolved
-            };
+            updated.approved = updated.for_votes > updated.against_votes;
+            updated.status = CaseStatus::Resolved;
             updated.resolved_at = env.ledger().timestamp();
 
             env.storage()
@@ -466,9 +446,9 @@ impl JuryRegistry {
                 (symbol_short!("RESOLVE"),),
                 (
                     case_id,
-                    updated.status.clone(),
                     updated.for_votes,
                     updated.against_votes,
+                    updated.approved,
                 ),
             );
             return;
@@ -495,14 +475,8 @@ impl JuryRegistry {
             panic!("case not resolved");
         }
 
-        let dispute_window: u64 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::DisputeWindow)
-            .unwrap_or(259200);
-
         let elapsed = env.ledger().timestamp() - case_result.resolved_at;
-        if elapsed >= dispute_window {
+        if elapsed >= case_result.dispute_window_secs {
             panic!("dispute window closed");
         }
 
@@ -551,9 +525,29 @@ impl JuryRegistry {
             .get(&DataKey::JurorStakes(juror.clone()))
             .expect("juror not found");
 
-        let slash_pct: i128 = 50;
-        stakes.xlm = stakes.xlm * (100 - slash_pct) / 100;
-        stakes.platform = stakes.platform * (100 - slash_pct) / 100;
+        let slash_pct = get_u32(&env, DataKey::SlashPct) as i128;
+        let slash_xlm = stakes.xlm * slash_pct / 100;
+        let slash_platform = stakes.platform * slash_pct / 100;
+
+        stakes.xlm -= slash_xlm;
+        stakes.platform -= slash_platform;
+
+        let xlm_token = get_addr(&env, DataKey::XlmToken);
+        let treasury = get_addr(&env, DataKey::Treasury);
+        token::Client::new(&env, &xlm_token).transfer(
+            &env.current_contract_address(),
+            &treasury,
+            &slash_xlm,
+        );
+        if slash_platform > 0 {
+            let platform_token = get_addr(&env, DataKey::PlatformToken);
+            token::Client::new(&env, &platform_token).transfer(
+                &env.current_contract_address(),
+                &treasury,
+                &slash_platform,
+            );
+        }
+
         env.storage()
             .persistent()
             .set(&DataKey::JurorStakes(juror.clone()), &stakes);
@@ -593,16 +587,9 @@ impl JuryRegistry {
 
     pub fn id_reg(env: Env) -> Address {
         env.storage()
-            .persistent()
+            .instance()
             .get(&DataKey::IdentityRegistry)
             .expect("identity registry not set")
-    }
-
-    pub fn disp_win(env: Env) -> u64 {
-        env.storage()
-            .persistent()
-            .get(&DataKey::DisputeWindow)
-            .unwrap_or(259200)
     }
 
     pub fn get_vote(env: Env, case_id: u32, juror: Address) -> VoteRecord {
@@ -610,6 +597,40 @@ impl JuryRegistry {
             .persistent()
             .get(&DataKey::CaseVote(case_id, juror))
             .expect("vote not found")
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        get_addr(&env, DataKey::Admin)
+    }
+
+    pub fn get_slash_pct(env: Env) -> u32 {
+        get_u32(&env, DataKey::SlashPct)
+    }
+
+    pub fn get_jury_size(env: Env) -> u32 {
+        get_u32(&env, DataKey::JurySize)
+    }
+
+    pub fn get_quorum(env: Env) -> u32 {
+        get_u32(&env, DataKey::Quorum)
+    }
+
+    pub fn get_min_stakes(env: Env) -> (i128, i128) {
+        let min_xlm = get_i128(&env, DataKey::MinXlmStake);
+        let min_platform = get_i128(&env, DataKey::MinPlatformStake);
+        (min_xlm, min_platform)
+    }
+
+    pub fn get_xlm_token(env: Env) -> Address {
+        get_addr(&env, DataKey::XlmToken)
+    }
+
+    pub fn get_platform_token(env: Env) -> Address {
+        get_addr(&env, DataKey::PlatformToken)
+    }
+
+    pub fn get_treasury(env: Env) -> Address {
+        get_addr(&env, DataKey::Treasury)
     }
 }
 
