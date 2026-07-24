@@ -18,8 +18,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.79.0
+          toolchain: 1.91.0
           targets: wasm32v1-none
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "contracts"
 
       - name: Run tests
         run: cargo test
