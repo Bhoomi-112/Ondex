@@ -120,8 +120,8 @@ export async function searchUsers(q: string, limit = 20): Promise<UserRecord[]> 
     where: {
       OR: [
         { wallet: { contains: q } },
-        { email: { contains: q, mode: "insensitive" } },
-        { displayName: { contains: q, mode: "insensitive" } },
+        { email: { contains: q } },
+        { displayName: { contains: q } },
       ],
     },
     take: limit,

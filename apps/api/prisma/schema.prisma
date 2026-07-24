@@ -2,8 +2,9 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Provider is overridden at runtime by prisma.config.ts
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model ContractEvent {

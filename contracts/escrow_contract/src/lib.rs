@@ -242,7 +242,6 @@ impl EscrowContract {
 
     pub fn deposit(env: Env, campaign_id: u32, investor: Address, amount: i128) {
         require_init(&env);
-        reentrancy_enter(&env);
         investor.require_auth();
 
         if amount <= 0 {
@@ -259,7 +258,8 @@ impl EscrowContract {
             panic!("campaign not accepting deposits");
         }
 
-        // Effects before external call (checks-effects-interactions)
+        reentrancy_enter(&env);
+
         let prev: i128 = env
             .storage()
             .persistent()
@@ -288,11 +288,12 @@ impl EscrowContract {
         let contract = env.current_contract_address();
         token::Client::new(&env, &campaign.asset).transfer(&investor, &contract, &amount);
 
+        reentrancy_exit(&env);
+
         env.events().publish(
             (symbol_short!("DEPOSIT"),),
             (campaign_id, investor, amount, campaign.total_amount),
         );
-        reentrancy_exit(&env);
     }
 
     pub fn jury_approved(env: Env, campaign_id: u32) {
@@ -453,7 +454,6 @@ impl EscrowContract {
 
     pub fn release(env: Env, campaign_id: u32) {
         require_init(&env);
-        reentrancy_enter(&env);
 
         let mut campaign: Campaign = env
             .storage()
@@ -497,7 +497,8 @@ impl EscrowContract {
         let asset = campaign.asset.clone();
         let contract = env.current_contract_address();
 
-        // Effects before interaction
+        reentrancy_enter(&env);
+
         campaign.state = EscrowState::Released;
         env.storage()
             .persistent()
@@ -505,16 +506,16 @@ impl EscrowContract {
 
         token::Client::new(&env, &asset).transfer(&contract, &startup, &amount);
 
+        reentrancy_exit(&env);
+
         env.events().publish(
             (symbol_short!("RELEASE"),),
             (campaign_id, startup, amount),
         );
-        reentrancy_exit(&env);
     }
 
     pub fn refund(env: Env, campaign_id: u32) {
         require_init(&env);
-        reentrancy_enter(&env);
 
         let mut campaign: Campaign = env
             .storage()
@@ -561,7 +562,8 @@ impl EscrowContract {
         let token_client = token::Client::new(&env, &asset);
         let total = campaign.total_amount;
 
-        // Mark refunded before external transfers
+        reentrancy_enter(&env);
+
         campaign.state = EscrowState::Refunded;
         env.storage()
             .persistent()
@@ -578,9 +580,10 @@ impl EscrowContract {
             }
         }
 
+        reentrancy_exit(&env);
+
         env.events()
             .publish((symbol_short!("REFUND"),), (campaign_id, total));
-        reentrancy_exit(&env);
     }
 
     pub fn get_campaign(env: Env, campaign_id: u32) -> Campaign {

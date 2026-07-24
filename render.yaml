@@ -5,7 +5,7 @@ services:
     repo: https://github.com/Bhoomi-112/Ondex
     branch: main
     buildCommand: pnpm --filter @ondex/api build
-    startCommand: bash apps/api/start.sh
+    startCommand: npx prisma db push && exec node dist/index.js
     healthCheckPath: /api/v1/auth/csrf
     envVars:
       - key: NODE_ENV
@@ -17,7 +17,7 @@ services:
           name: ondex-db
           property: connectionString
       - key: CORS_ORIGINS
-        value: https://your-frontend-url.vercel.app
+        value: https://ondex-web.vercel.app
       - key: SOROBAN_RPC_URL
         sync: false
       - key: HORIZON_URL
